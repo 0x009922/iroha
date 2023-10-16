@@ -8,8 +8,7 @@ use std::{
 };
 
 use derive_more::From;
-use eyre::{bail, eyre, ErrReport, Result, WrapErr};
-use iroha_config::genesis::Configuration;
+use eyre::{bail, ErrReport, Result, WrapErr};
 use iroha_crypto::{KeyPair, PublicKey};
 use iroha_data_model::{
     asset::AssetDefinition,
@@ -45,18 +44,9 @@ impl GenesisNetwork {
     /// Fails if genesis block is not found or cannot be deserialized.
     pub fn from_configuration(
         raw_block: RawGenesisBlock,
-        genesis_config: Option<&Configuration>,
+        genesis_key_pair: KeyPair, // genesis_config: Option<&Configuration>,
     ) -> Result<GenesisNetwork> {
         iroha_logger::debug!("Submitting genesis.");
-        let genesis_config =
-            genesis_config.expect("Should be `Some` when `submit_genesis` is true");
-        let genesis_key_pair = KeyPair::new(
-            genesis_config.account_public_key.clone(),
-            genesis_config
-                .account_private_key
-                .clone()
-                .ok_or_else(|| eyre!("Genesis account private key is empty."))?,
-        )?;
         #[cfg(not(test))]
         // First instruction should be Executor upgrade.
         // This makes possible to grant permissions to users in genesis.

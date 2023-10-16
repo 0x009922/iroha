@@ -2,7 +2,7 @@
 
 use std::{sync::Arc, time::Duration};
 
-use iroha_config::sumeragi::Configuration;
+use iroha_config2::sumeragi::Config as Configuration;
 use iroha_data_model::transaction::SignedTransaction;
 use iroha_p2p::Broadcast;
 use parity_scale_codec::{Decode, Encode};
@@ -58,7 +58,7 @@ impl TransactionGossiper {
     /// Construct [`Self`] from configuration
     pub fn from_configuration(
         // Currently we are using configuration parameters from sumeragi not to break configuration
-        configuartion: &Configuration,
+        config: &Configuration,
         network: IrohaNetwork,
         queue: Arc<Queue>,
         sumeragi: SumeragiHandle,
@@ -68,8 +68,8 @@ impl TransactionGossiper {
             queue,
             sumeragi,
             network,
-            gossip_batch_size: configuartion.gossip_batch_size,
-            gossip_period: Duration::from_millis(configuartion.gossip_period_ms),
+            gossip_batch_size: config.gossip_batch_amount,
+            gossip_period: config.gossip_period,
             wsv,
         }
     }

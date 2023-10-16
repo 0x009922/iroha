@@ -46,7 +46,7 @@ iroha_p2p = { workspace = true }
 iroha_logger = { workspace = true }
 iroha_crypto = { workspace = true }
 iroha_version = { workspace = true }
-iroha_config = { workspace = true }
+iroha_config2 = { workspace = true }
 iroha_futures = { workspace = true }
 iroha_telemetry = { workspace = true }
 iroha_primitives = { workspace = true }

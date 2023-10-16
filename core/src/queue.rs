@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use crossbeam_queue::ArrayQueue;
 use dashmap::{mapref::entry::Entry, DashMap};
 use eyre::{Report, Result};
-use iroha_config::queue::Configuration;
+use iroha_config2::queue::Config as Configuration;
 use iroha_crypto::HashOf;
 use iroha_data_model::{account::AccountId, transaction::prelude::*};
 use iroha_logger::{debug, info, trace, warn};
@@ -104,8 +104,8 @@ impl Queue {
             txs_per_user: DashMap::new(),
             max_txs: cfg.max_transactions_in_queue as usize,
             max_txs_per_user: cfg.max_transactions_in_queue_per_user as usize,
-            tx_time_to_live: Duration::from_millis(cfg.transaction_time_to_live_ms),
-            future_threshold: Duration::from_millis(cfg.future_threshold_ms),
+            tx_time_to_live: cfg.transactions_time_to_live,
+            future_threshold: cfg.future_threshold,
         }
     }
 

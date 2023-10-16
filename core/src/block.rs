@@ -6,7 +6,6 @@
 //! [`Block`]s are organised into a linear sequence over time (also known as the block chain).
 use std::error::Error as _;
 
-use iroha_config::sumeragi::default::DEFAULT_CONSENSUS_ESTIMATION_MS;
 use iroha_crypto::{HashOf, KeyPair, MerkleTree, SignatureOf, SignaturesOf};
 use iroha_data_model::{
     block::*,
@@ -93,6 +92,7 @@ pub enum SignatureVerificationError {
 pub struct BlockBuilder<B>(B);
 
 mod pending {
+    use std::time::Duration;
     use iroha_data_model::transaction::TransactionValue;
 
     use super::*;
@@ -138,13 +138,14 @@ mod pending {
             previous_block_hash: Option<HashOf<SignedBlock>>,
             view_change_index: u64,
             transactions: &[TransactionValue],
+            consensus_estimation: std::time::Duration
         ) -> BlockHeader {
             BlockHeader {
                 timestamp_ms: iroha_data_model::current_time()
                     .as_millis()
                     .try_into()
                     .expect("Time should fit into u64"),
-                consensus_estimation_ms: DEFAULT_CONSENSUS_ESTIMATION_MS,
+                consensus_estimation_ms: consensus_estimation.as_millis() as u64,
                 height: previous_height + 1,
                 view_change_index,
                 previous_block_hash,
@@ -189,6 +190,7 @@ mod pending {
             self,
             view_change_index: u64,
             wsv: &mut WorldStateView,
+            consensus_estimation: Duration
         ) -> BlockBuilder<Chained> {
             let transactions = Self::categorize_transactions(self.0.transactions, wsv);
 
@@ -198,6 +200,7 @@ mod pending {
                     wsv.latest_block_hash(),
                     view_change_index,
                     &transactions,
+                    consensus_estimation
                 ),
                 transactions,
                 commit_topology: self.0.commit_topology.ordered_peers,

@@ -9,11 +9,11 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use color_eyre::eyre::{eyre, Result, WrapErr};
-use iroha_config::{
-    base::proxy::{LoadFromDisk, LoadFromEnv, Override},
-    iroha::{Configuration, ConfigurationProxy},
-    path::Path as ConfigPath,
-};
+// use iroha_config::{
+//     base::proxy::{LoadFromDisk, LoadFromEnv, Override},
+//     iroha::{Configuration, ConfigurationProxy},
+//     path::Path as ConfigPath,
+// };
 use iroha_core::{
     block_sync::{BlockSynchronizer, BlockSynchronizerHandle},
     gossiper::{TransactionGossiper, TransactionGossiperHandle},
@@ -37,9 +37,10 @@ use tokio::{
 use torii::Torii;
 
 mod event;
-pub mod samples;
+// pub mod samples;
+pub mod config;
 mod stream;
-pub mod style;
+// pub mod style;
 pub mod torii;
 
 /// Arguments for Iroha2.  Configuration for arguments is parsed from

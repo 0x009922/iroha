@@ -37,6 +37,7 @@ pub(crate) mod utils;
 mod cursor;
 mod pagination;
 mod routing;
+mod uri;
 
 type LiveQuery = Batched<Vec<Value>>;
 
@@ -82,7 +83,7 @@ impl LiveQueryStore {
 
 /// Main network handler and the only entrypoint of the Iroha.
 pub struct Torii {
-    iroha_cfg: super::Configuration,
+    config: iroha_config2::torii::Config,
     queue: Arc<Queue>,
     events: EventsSender,
     notify_shutdown: Arc<Notify>,
@@ -102,8 +103,8 @@ pub enum Error {
     Config(#[source] eyre::Report),
     /// Failed to push into queue
     PushIntoQueue(#[from] Box<queue::Error>),
-    /// Attempt to change configuration failed
-    ConfigurationReload(#[from] iroha_config::base::runtime_upgrades::ReloadError),
+    // /// Attempt to change configuration failed
+    // ConfigurationReload(#[from] iroha_config::base::runtime_upgrades::ReloadError),
     #[cfg(feature = "telemetry")]
     /// Error while getting Prometheus metrics
     Prometheus(#[source] eyre::Report),
@@ -155,9 +156,7 @@ impl Error {
         use Error::*;
         match self {
             Query(e) => query_status_code(e),
-            AcceptTransaction(_) | ConfigurationReload(_) | UnknownCursor => {
-                StatusCode::BAD_REQUEST
-            }
+            AcceptTransaction(_) | UnknownCursor => StatusCode::BAD_REQUEST,
             Config(_) => StatusCode::NOT_FOUND,
             PushIntoQueue(err) => match **err {
                 queue::Error::Full => StatusCode::INTERNAL_SERVER_ERROR,

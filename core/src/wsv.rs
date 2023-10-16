@@ -10,10 +10,7 @@ use std::{
 };
 
 use eyre::Result;
-use iroha_config::{
-    base::proxy::Builder,
-    wsv::{Configuration, ConfigurationProxy},
-};
+use iroha_config2::wsv::Config as Configuration;
 use iroha_crypto::HashOf;
 use iroha_data_model::{
     account::AccountId,
@@ -390,16 +387,16 @@ impl Clone for WorldStateView {
 
 /// WARNING!!! INTERNAL USE ONLY!!!
 impl WorldStateView {
-    /// Construct [`WorldStateView`] with given [`World`].
-    #[must_use]
-    #[inline]
-    pub fn new(world: World, kura: Arc<Kura>) -> Self {
-        // Added to remain backward compatible with other code primary in tests
-        let config = ConfigurationProxy::default()
-            .build()
-            .expect("Wsv proxy always builds");
-        Self::from_configuration(config, world, kura)
-    }
+    // /// Construct [`WorldStateView`] with given [`World`].
+    // #[must_use]
+    // #[inline]
+    // pub fn new(world: World, kura: Arc<Kura>) -> Self {
+    //     // Added to remain backward compatible with other code primary in tests
+    //     let config = ConfigurationProxy::default()
+    //         .build()
+    //         .expect("Wsv proxy always builds");
+    //     Self::from_configuration(config, world, kura)
+    // }
 
     /// Get `Account`'s `Asset`s
     ///
@@ -521,8 +518,7 @@ impl WorldStateView {
                 self.process_instructions(instructions.iter().cloned(), authority)
             }
             Wasm(LoadedWasm { module, .. }) => {
-                let mut wasm_runtime = wasm::RuntimeBuilder::<wasm::state::Trigger>::new()
-                    .with_configuration(self.config.wasm_runtime_config)
+                let mut wasm_runtime = wasm::RuntimeBuilder::<wasm::state::Trigger>::new(self.config.wasm_runtime)
                     .with_engine(self.engine.clone()) // Cloning engine is cheap
                     .build()?;
                 wasm_runtime
@@ -581,8 +577,7 @@ impl WorldStateView {
                 self.process_instructions(instructions.iter().cloned(), &authority)
             }
             Executable::Wasm(bytes) => {
-                let mut wasm_runtime = wasm::RuntimeBuilder::<wasm::state::SmartContract>::new()
-                    .with_configuration(self.config.wasm_runtime_config)
+                let mut wasm_runtime = wasm::RuntimeBuilder::<wasm::state::SmartContract>::new(self.config.wasm_runtime)
                     .with_engine(self.engine.clone()) // Cloning engine is cheap
                     .build()?;
                 wasm_runtime
@@ -688,9 +683,9 @@ impl WorldStateView {
             WSV_ASSET_DEFINITION_METADATA_LIMITS => config.asset_definition_metadata_limits,
             WSV_ACCOUNT_METADATA_LIMITS => config.account_metadata_limits,
             WSV_DOMAIN_METADATA_LIMITS => config.domain_metadata_limits,
-            WSV_IDENT_LENGTH_LIMITS => config.ident_length_limits,
-            WASM_FUEL_LIMIT => config.wasm_runtime_config.fuel_limit,
-            WASM_MAX_MEMORY => config.wasm_runtime_config.max_memory,
+            WSV_IDENT_LENGTH_LIMITS => config.identifier_length_limits,
+            WASM_FUEL_LIMIT => config.wasm_runtime.fuel_limit,
+            WASM_MAX_MEMORY => config.wasm_runtime.max_memory.0,
             TRANSACTION_LIMITS => config.transaction_limits,
         }
     }

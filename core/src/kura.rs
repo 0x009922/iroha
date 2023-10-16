@@ -10,7 +10,7 @@ use std::{
     sync::Arc,
 };
 
-use iroha_config::kura::Mode;
+use iroha_config2::kura::Mode;
 use iroha_crypto::{Hash, HashOf};
 use iroha_data_model::block::SignedBlock;
 use iroha_logger::prelude::*;

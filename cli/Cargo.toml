@@ -50,7 +50,7 @@ iroha_data_model = { workspace = true, features = ["http"] }
 iroha_primitives = { workspace = true }
 iroha_telemetry = { workspace = true, optional = true }
 iroha_version = { workspace = true, features = ["http"] }
-iroha_config = { workspace = true }
+iroha_config2 = { workspace = true }
 iroha_crypto = { workspace = true }
 iroha_p2p = { workspace = true }
 iroha_schema_gen = { workspace = true, optional = true }
@@ -58,7 +58,7 @@ iroha_cli_derive = { workspace = true }
 iroha_genesis = { workspace = true }
 iroha_wasm_builder = { workspace = true }
 
-
+clap = { workspace = true, features = ["derive"] }
 async-trait = { workspace = true }
 color-eyre = { workspace = true }
 eyre = { workspace = true }

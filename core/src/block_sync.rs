@@ -1,7 +1,7 @@
 //! This module contains structures and messages for synchronization of blocks between peers.
 use std::{fmt::Debug, sync::Arc, time::Duration};
 
-use iroha_config::block_sync::Configuration;
+use iroha_config2::block_sync::Config as Configuration;
 use iroha_crypto::HashOf;
 use iroha_data_model::{block::SignedBlock, prelude::*};
 use iroha_logger::prelude::*;
@@ -116,8 +116,8 @@ impl BlockSynchronizer {
             peer_id,
             sumeragi,
             kura,
-            gossip_period: Duration::from_millis(config.gossip_period_ms),
-            block_batch_size: config.block_batch_size,
+            gossip_period: config.gossip_period,
+            block_batch_size: config.block_batch_amount,
             network,
             latest_hash,
             previous_hash,

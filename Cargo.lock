@@ -2722,13 +2722,14 @@ name = "iroha"
 version = "2.0.0-pre-rc.19"
 dependencies = [
  "async-trait",
+ "clap 4.4.6",
  "color-eyre",
  "dashmap",
  "displaydoc",
  "eyre",
  "futures",
  "iroha_cli_derive",
- "iroha_config",
+ "iroha_config2",
  "iroha_core",
  "iroha_crypto",
  "iroha_data_model",
@@ -2853,6 +2854,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "iroha_config2"
+version = "2.0.0-pre-rc.19"
+dependencies = [
+ "iroha_crypto",
+ "iroha_data_model",
+ "iroha_primitives",
+ "serde",
+]
+
+[[package]]
 name = "iroha_config_base"
 version = "2.0.0-pre-rc.19"
 dependencies = [
@@ -2893,7 +2904,7 @@ dependencies = [
  "eyre",
  "futures",
  "hex",
- "iroha_config",
+ "iroha_config2",
  "iroha_crypto",
  "iroha_data_model",
  "iroha_futures",
@@ -2974,6 +2985,7 @@ dependencies = [
  "strum 0.25.0",
  "thiserror",
  "tokio",
+ "tracing",
  "trybuild",
  "warp",
 ]
@@ -3124,7 +3136,7 @@ dependencies = [
  "color-eyre",
  "console-subscriber",
  "derive_more",
- "iroha_config",
+ "iroha_config2",
  "iroha_data_model",
  "once_cell",
  "serde_json",

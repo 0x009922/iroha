@@ -5,10 +5,7 @@ use error::*;
 use import_traits::{
     ExecuteOperations as _, GetExecutorPayloads as _, SetPermissionTokenSchema as _,
 };
-use iroha_config::{
-    base::proxy::Builder,
-    wasm::{Configuration, ConfigurationProxy},
-};
+use iroha_config2::wsv::WasmRuntime as Configuration;
 use iroha_data_model::{
     account::AccountId,
     executor::{self, MigrationResult},
@@ -314,7 +311,7 @@ pub mod state {
     pub fn store_limits_from_config(config: &Configuration) -> StoreLimits {
         StoreLimitsBuilder::new()
             .memory_size(
-                config.max_memory.try_into().expect(
+                config.max_memory.0.try_into().expect(
                     "config.max_memory is a u32 so this can't fail on any supported platform",
                 ),
             )
@@ -1375,19 +1372,18 @@ impl<'wrld> import_traits::SetPermissionTokenSchema<state::executor::Migrate<'wr
 }
 
 /// `Runtime` builder
-#[derive(Default)]
 pub struct RuntimeBuilder<S> {
     engine: Option<Engine>,
-    config: Option<Configuration>,
+    config: Configuration,
     linker: Option<Linker<S>>,
 }
 
 impl<S> RuntimeBuilder<S> {
     /// Creates a new [`RuntimeBuilder`]
-    pub fn new() -> Self {
+    pub fn new(config: Configuration) -> Self {
         Self {
             engine: None,
-            config: None,
+            config,
             linker: None,
         }
     }
@@ -1397,14 +1393,6 @@ impl<S> RuntimeBuilder<S> {
     #[inline]
     pub fn with_engine(mut self, engine: Engine) -> Self {
         self.engine = Some(engine);
-        self
-    }
-
-    /// Sets the [`Configuration`] to be used by the [`Runtime`]
-    #[must_use]
-    #[inline]
-    pub fn with_configuration(mut self, config: Configuration) -> Self {
-        self.config = Some(config);
         self
     }
 
@@ -1420,11 +1408,7 @@ impl<S> RuntimeBuilder<S> {
         Ok(Runtime {
             engine,
             linker,
-            config: self.config.unwrap_or_else(|| {
-                ConfigurationProxy::default()
-                    .build()
-                    .expect("Error building WASM Runtime configuration from proxy. This is a bug")
-            }),
+            config: self.config,
         })
     }
 }

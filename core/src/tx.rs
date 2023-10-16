@@ -367,7 +367,12 @@ impl TransactionExecutor {
         Self::validate_with_runtime_executor(tx.clone(), &mut wsv_for_validation)?;
 
         if let (authority, Executable::Wasm(bytes)) = tx.into() {
-            self.validate_wasm(authority, &mut wsv_for_validation, bytes)?
+            self.validate_wasm(
+                authority,
+                &mut wsv_for_validation,
+                bytes,
+                wsv.config.wasm_runtime,
+            )?
         }
 
         // Replace wsv in case of successful execution
@@ -382,10 +387,11 @@ impl TransactionExecutor {
         authority: AccountId,
         wsv: &mut WorldStateView,
         wasm: WasmSmartContract,
+        wasm_runtime_config: iroha_config2::wsv::WasmRuntime,
     ) -> Result<(), TransactionRejectionReason> {
         debug!("Validating wasm");
 
-        wasm::RuntimeBuilder::<wasm::state::SmartContract>::new()
+        wasm::RuntimeBuilder::<wasm::state::SmartContract>::new(wasm_runtime_config)
             .build()
             .and_then(|mut wasm_runtime| {
                 wasm_runtime.validate(

@@ -32,6 +32,8 @@ pub struct Sumeragi {
     /// Time by which a new block should be created regardless if there were enough transactions or not.
     /// Used to force block commits when there is a small influx of new transactions.
     pub block_time: Duration,
+    /// TODO
+    pub consensus_estimation: Duration,
     /// The maximum number of transactions in the block
     pub max_txs_in_block: usize,
     /// Kura instance used for IO
@@ -247,7 +249,7 @@ impl Sumeragi {
 
         let mut new_wsv = self.wsv.clone();
         let genesis = BlockBuilder::new(transactions, self.current_topology.clone(), vec![])
-            .chain(0, &mut new_wsv)
+            .chain(0, &mut new_wsv, self.consensus_estimation)
             .sign(self.key_pair.clone())
             .expect("Genesis signing failed");
 
@@ -625,7 +627,11 @@ fn process_message_independent(
                         sumeragi.current_topology.clone(),
                         event_recommendations,
                     )
-                    .chain(current_view_change_index, &mut new_wsv)
+                    .chain(
+                        current_view_change_index,
+                        &mut new_wsv,
+                        sumeragi.consensus_estimation,
+                    )
                     .sign(sumeragi.key_pair.clone())
                     {
                         Ok(block) => block,

@@ -8,7 +8,7 @@ use std::{
 };
 
 use eyre::{Result, WrapErr as _};
-use iroha_config::sumeragi::Configuration;
+use iroha_config2::sumeragi::Config as Configuration;
 use iroha_crypto::{KeyPair, SignatureOf};
 use iroha_data_model::prelude::*;
 use iroha_genesis::GenesisNetwork;
@@ -230,7 +230,7 @@ impl SumeragiHandle {
     #[allow(clippy::too_many_lines)]
     pub fn start(
         SumeragiStartArgs {
-            configuration,
+            configuration: config,
             events_sender,
             mut wsv,
             queue,
@@ -253,8 +253,8 @@ impl SumeragiHandle {
 
         let current_topology = match wsv.height() {
             0 => {
-                assert!(!configuration.trusted_peers.peers.is_empty());
-                Topology::new(configuration.trusted_peers.peers.clone())
+                assert!(!config.trusted_peers.is_empty());
+                Topology::new(config.trusted_peers.clone())
             }
             height => {
                 let block_ref = kura.get_block_by_height(height).expect(
@@ -301,21 +301,22 @@ impl SumeragiHandle {
         let (public_finalized_wsv_sender, public_finalized_wsv_receiver) =
             watch::channel(finalized_wsv.clone());
 
-        #[cfg(debug_assertions)]
-        let debug_force_soft_fork = configuration.debug_force_soft_fork;
-        #[cfg(not(debug_assertions))]
+        // #[cfg(debug_assertions)]
+        // let debug_force_soft_fork = configuration.debug_force_soft_fork;
+        // #[cfg(not(debug_assertions))]
         let debug_force_soft_fork = false;
 
         let sumeragi = main_loop::Sumeragi {
-            key_pair: configuration.key_pair.clone(),
+            key_pair: config.key_pair.clone(),
+            peer_id: config.peer_id.clone(),
             queue: Arc::clone(&queue),
-            peer_id: configuration.peer_id.clone(),
             events_sender,
             public_wsv_sender,
             public_finalized_wsv_sender,
-            commit_time: Duration::from_millis(configuration.commit_time_limit_ms),
-            block_time: Duration::from_millis(configuration.block_time_ms),
-            max_txs_in_block: configuration.max_transactions_in_block as usize,
+            commit_time: config.commit_time,
+            block_time: config.block_time,
+            consensus_estimation: config.consensus_estimation(),
+            max_txs_in_block: config.max_transactions_in_block as usize,
             kura: Arc::clone(&kura),
             network: network.clone(),
             control_message_receiver,

@@ -11,14 +11,7 @@ use std::{
 };
 
 use cursor::Batch;
-use eyre::WrapErr;
 use futures::TryStreamExt;
-use iroha_config::{
-    base::proxy::Documented,
-    iroha::{Configuration, ConfigurationView},
-    torii::uri,
-    GetConfiguration, PostConfiguration,
-};
 use iroha_core::{
     smartcontracts::{isi::query::ValidQueryRequest, query::LazyValue},
     sumeragi::SumeragiHandle,
@@ -235,45 +228,6 @@ async fn handle_pending_transactions(
 }
 
 #[iroha_futures::telemetry_future]
-async fn handle_get_configuration(
-    iroha_cfg: Configuration,
-    get_cfg: GetConfiguration,
-) -> Result<Json> {
-    use GetConfiguration::*;
-
-    match get_cfg {
-        Docs(field) => <Configuration as Documented>::get_doc_recursive(
-            field.iter().map(AsRef::as_ref).collect::<Vec<&str>>(),
-        )
-        .wrap_err("Failed to get docs {:?field}")
-        .and_then(|doc| serde_json::to_value(doc).wrap_err("Failed to serialize docs")),
-        // Cast to configuration view to hide private keys.
-        Value => serde_json::to_value(ConfigurationView::from(iroha_cfg))
-            .wrap_err("Failed to serialize value"),
-    }
-    .map(|v| reply::json(&v))
-    .map_err(Error::Config)
-}
-
-#[iroha_futures::telemetry_future]
-async fn handle_post_configuration(
-    iroha_cfg: Configuration,
-    cfg: PostConfiguration,
-) -> Result<Json> {
-    use iroha_config::base::runtime_upgrades::Reload;
-    use PostConfiguration::*;
-
-    iroha_logger::debug!(?cfg);
-    match cfg {
-        LogLevel(level) => {
-            iroha_cfg.logger.max_log_level.reload(level)?;
-        }
-    };
-
-    Ok(reply::json(&true))
-}
-
-#[iroha_futures::telemetry_future]
 async fn handle_blocks_stream(kura: Arc<Kura>, mut stream: WebSocket) -> eyre::Result<()> {
     let BlockSubscriptionRequest(mut from_height) = stream.recv().await?;
 
@@ -457,7 +411,7 @@ impl Torii {
     /// Construct `Torii` from `ToriiConfiguration`.
     #[allow(clippy::too_many_arguments)]
     pub fn from_configuration(
-        iroha_cfg: Configuration,
+        config: iroha_config2::torii::Config,
         queue: Arc<Queue>,
         events: EventsSender,
         notify_shutdown: Arc<Notify>,
@@ -465,7 +419,7 @@ impl Torii {
         kura: Arc<Kura>,
     ) -> Self {
         Self {
-            iroha_cfg,
+            config,
             events,
             queue,
             notify_shutdown,
@@ -482,20 +436,12 @@ impl Torii {
             .and(warp::path(uri::HEALTH))
             .and_then(|| async { Ok::<_, Infallible>(handle_health()) });
 
-        let get_router = warp::get().and(
-            endpoint3(
-                handle_pending_transactions,
-                warp::path(uri::PENDING_TRANSACTIONS)
-                    .and(add_state!(self.queue, self.sumeragi,))
-                    .and(paginate()),
-            )
-            .or(endpoint2(
-                handle_get_configuration,
-                warp::path(uri::CONFIGURATION)
-                    .and(add_state!(self.iroha_cfg))
-                    .and(warp::body::json()),
-            )),
-        );
+        let get_router = warp::get().and(endpoint3(
+            handle_pending_transactions,
+            warp::path(uri::PENDING_TRANSACTIONS)
+                .and(add_state!(self.queue, self.sumeragi,))
+                .and(paginate()),
+        ));
 
         let status_path = warp::path(uri::STATUS);
         let get_router_status_precise = endpoint2(
@@ -536,7 +482,7 @@ impl Torii {
                     warp::path(uri::TRANSACTION)
                         .and(add_state!(self.queue, self.sumeragi))
                         .and(warp::body::content_length_limit(
-                            self.iroha_cfg.torii.max_content_len.into(),
+                            self.config.max_content_len.0.into(),
                         ))
                         .and(body::versioned()),
                 )
@@ -546,19 +492,13 @@ impl Torii {
                         .and(add_state!(
                             self.sumeragi,
                             self.query_store,
-                            NonZeroUsize::try_from(self.iroha_cfg.torii.fetch_size)
+                            NonZeroUsize::try_from(self.config.fetch_amount)
                                 .expect("u64 should always fit into usize"),
                         ))
                         .and(body::versioned())
                         .and(sorting())
                         .and(paginate())
                         .and(cursor()),
-                ))
-                .or(endpoint2(
-                    handle_post_configuration,
-                    warp::path(uri::CONFIGURATION)
-                        .and(add_state!(self.iroha_cfg))
-                        .and(warp::body::json()),
                 )),
             )
             .recover(|rejection| async move { body::recover_versioned(rejection) });
@@ -616,30 +556,20 @@ impl Torii {
     ///
     /// # Errors
     /// Can fail due to listening to network or if http server fails
-    fn start_api(self: Arc<Self>) -> eyre::Result<Vec<tokio::task::JoinHandle<()>>> {
-        let api_url = &self.iroha_cfg.torii.api_url;
+    fn start_api(self: Arc<Self>) -> eyre::Result<task::JoinHandle<()>> {
+        let addr = {
+            // FIXME: a single address here for sure
+            let mut addrs = &self.config.api_address.to_socket_addrs()?;
+            let Some(first) = addrs.next();
+            let None = addrs.next();
+            first
+        };
 
-        let mut handles = vec![];
-        match api_url.to_socket_addrs() {
-            Ok(addrs) => {
-                for addr in addrs {
-                    let torii = Arc::clone(&self);
+        let api_router = self.create_api_router();
+        let signal_fut = async move { self.notify_shutdown.notified().await };
+        let (_, serve_fut) = warp::serve(api_router).bind_with_graceful_shutdown(addr, signal_fut);
 
-                    let api_router = torii.create_api_router();
-                    let signal_fut = async move { torii.notify_shutdown.notified().await };
-                    let (_, serve_fut) =
-                        warp::serve(api_router).bind_with_graceful_shutdown(addr, signal_fut);
-
-                    handles.push(task::spawn(serve_fut));
-                }
-
-                Ok(handles)
-            }
-            Err(error) => {
-                iroha_logger::error!(%api_url, %error, "API address configuration parse error");
-                Err(eyre::Error::new(error))
-            }
-        }
+        Ok(task::spawn(serve_fut))
     }
 
     /// To handle incoming requests `Torii` should be started first.
@@ -648,12 +578,12 @@ impl Torii {
     /// Can fail due to listening to network or if http server fails
     #[iroha_futures::telemetry_future]
     pub(crate) async fn start(self) -> eyre::Result<()> {
-        let query_idle_time = Duration::from_millis(self.iroha_cfg.torii.query_idle_time_ms.get());
+        let query_idle_time = self.config.query_idle_time;
 
         let torii = Arc::new(self);
         let mut handles = vec![];
 
-        handles.extend(Arc::clone(&torii).start_api()?);
+        handles.push(Arc::clone(&torii).start_api()?);
         handles.push(
             Arc::clone(&torii.query_store)
                 .expired_query_cleanup(query_idle_time, Arc::clone(&torii.notify_shutdown)),

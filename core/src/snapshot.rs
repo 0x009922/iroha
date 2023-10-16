@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use iroha_config::snapshot::Configuration;
+use iroha_config2::snapshot::Config as Configuration;
 use iroha_crypto::HashOf;
 use iroha_data_model::block::SignedBlock;
 use iroha_logger::prelude::*;
@@ -40,9 +40,9 @@ pub struct SnapshotMaker {
     /// Frequency at which snapshot is made
     snapshot_create_every: Duration,
     /// Path to the directory where snapshots are stored
-    snapshot_dir: String,
-    /// Flag to enable/disable snapshot creation
-    snapshot_creation_enabled: bool,
+    snapshot_dir: PathBuf,
+    // /// Flag to enable/disable snapshot creation
+    // snapshot_creation_enabled: bool,
     /// Flag to signal that new wsv is available for taking snapshot
     new_wsv_available: bool,
 }
@@ -51,11 +51,11 @@ impl SnapshotMaker {
     /// Start [`Self`] actor.
     pub fn start(self) -> SnapshotMakerHandle {
         let (message_sender, message_receiver) = mpsc::channel(1);
-        if self.snapshot_creation_enabled {
-            tokio::task::spawn(self.run(message_receiver));
-        } else {
-            iroha_logger::info!("Snapshot creation is disabled");
-        }
+        // if self.snapshot_creation_enabled {
+        tokio::task::spawn(self.run(message_receiver));
+        // } else {
+        //     iroha_logger::info!("Snapshot creation is disabled");
+        // }
         SnapshotMakerHandle {
             _message_sender: message_sender,
         }
@@ -139,9 +139,9 @@ impl SnapshotMaker {
     pub fn from_configuration(config: &Configuration, sumeragi: SumeragiHandle) -> Self {
         Self {
             sumeragi,
-            snapshot_create_every: Duration::from_millis(config.create_every_ms),
-            snapshot_dir: config.dir_path.clone(),
-            snapshot_creation_enabled: config.creation_enabled,
+            snapshot_create_every: config.create_every,
+            snapshot_dir: config.directory.clone(),
+            // snapshot_creation_enabled:  config.creation_enabled,
             new_wsv_available: false,
         }
     }
