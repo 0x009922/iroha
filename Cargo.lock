@@ -2826,6 +2826,7 @@ dependencies = [
  "iroha_version",
  "once_cell",
  "parity-scale-codec",
+ "parse-display",
  "serde",
  "serde_json",
  "serde_with",

@@ -971,6 +971,7 @@ pub mod model {
         Decode,
         FromRepr,
         IntoSchema,
+        parse_display::FromStr,
     )]
     #[allow(clippy::upper_case_acronyms)]
     #[repr(u8)]
@@ -1001,6 +1002,16 @@ pub mod model {
         /// Index of the next element in the result set. Client will use this value
         /// in the next request to continue fetching results of the original query
         pub cursor: crate::query::cursor::ForwardCursor,
+    }
+
+    #[cfg(test)]
+    mod test {
+        use super::*;
+
+        #[test]
+        fn parse_level_from_str() {
+            assert_eq!("INFO".parse::<Level>().unwrap(), Level::INFO);
+        }
     }
 }
 
