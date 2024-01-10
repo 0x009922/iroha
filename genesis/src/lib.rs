@@ -42,9 +42,8 @@ impl GenesisNetwork {
     /// Construct [`GenesisNetwork`] from configuration.
     ///
     /// # Errors
-    /// - If fails to sign a transaction (which means that the `key_pair` is malformed rather
-    ///   than anything else)
-    /// - If transactions set is empty
+    /// If fails to sign a transaction (which means that the `key_pair` is malformed rather
+    /// than anything else)
     pub fn new(raw_block: RawGenesisBlock, genesis_key_pair: &KeyPair) -> Result<GenesisNetwork> {
         // First instruction should be Executor upgrade.
         // This makes possible to grant permissions to users in genesis.
@@ -143,6 +142,7 @@ impl ExecutorMode {
     }
 }
 
+/// Loads the executor from the path or uses the inline blob for conversion
 impl TryFrom<ExecutorMode> for Executor {
     type Error = ErrReport;
 
