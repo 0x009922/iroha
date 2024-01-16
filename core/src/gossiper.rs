@@ -1,8 +1,8 @@
 //! Gossiper is actor which is responsible for transaction gossiping
 
-use std::{sync::Arc, time::Duration};
+use std::{num::NonZeroU32, sync::Arc, time::Duration};
 
-use iroha_config::sumeragi::Configuration;
+use iroha_config::parameters::actual::TransactionGossiper as Config;
 use iroha_data_model::transaction::SignedTransaction;
 use iroha_p2p::Broadcast;
 use parity_scale_codec::{Decode, Encode};
@@ -33,7 +33,7 @@ impl TransactionGossiperHandle {
 pub struct TransactionGossiper {
     /// The size of batch that is being gossiped. Smaller size leads
     /// to longer time to synchronise, useful if you have high packet loss.
-    gossip_batch_size: u32,
+    gossip_batch_size: NonZeroU32,
     /// The time between gossiping. More frequent gossiping shortens
     /// the time to sync, but can overload the network.
     gossip_period: Duration,
@@ -58,7 +58,7 @@ impl TransactionGossiper {
     /// Construct [`Self`] from configuration
     pub fn from_configuration(
         // Currently we are using configuration parameters from sumeragi not to break configuration
-        configuartion: &Configuration,
+        config: &Config,
         network: IrohaNetwork,
         queue: Arc<Queue>,
         sumeragi: SumeragiHandle,
@@ -68,8 +68,8 @@ impl TransactionGossiper {
             queue,
             sumeragi,
             network,
-            gossip_batch_size: configuartion.gossip_batch_size,
-            gossip_period: Duration::from_millis(configuartion.gossip_period_ms),
+            gossip_batch_size: config.batch_size,
+            gossip_period: config.gossip_period,
             wsv,
         }
     }
@@ -97,7 +97,7 @@ impl TransactionGossiper {
     fn gossip_transactions(&self) {
         let txs = self
             .queue
-            .n_random_transactions(self.gossip_batch_size, &self.wsv);
+            .n_random_transactions(self.gossip_batch_size.get(), &self.wsv);
 
         if txs.is_empty() {
             return;
