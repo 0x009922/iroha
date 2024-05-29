@@ -45,40 +45,6 @@ pub mod snapshot {
     pub const CREATE_EVERY: Duration = Duration::from_secs(60);
 }
 
-pub mod chain_wide {
-    use super::*;
-
-    pub const MAX_TXS: NonZeroU32 = nonzero!(2_u32.pow(9));
-    pub const BLOCK_TIME: Duration = Duration::from_secs(2);
-    pub const COMMIT_TIME: Duration = Duration::from_secs(4);
-    pub const WASM_FUEL_LIMIT: u64 = 55_000_000;
-    // TODO: wrap into a `Bytes` newtype
-    pub const WASM_MAX_MEMORY_BYTES: u32 = 500 * 2_u32.pow(20);
-
-    /// Default estimation of consensus duration.
-    pub const CONSENSUS_ESTIMATION: Duration =
-        match BLOCK_TIME.checked_add(match COMMIT_TIME.checked_div(2) {
-            Some(x) => x,
-            None => unreachable!(),
-        }) {
-            Some(x) => x,
-            None => unreachable!(),
-        };
-
-    /// Default limits for metadata
-    pub const METADATA_LIMITS: MetadataLimits = MetadataLimits::new(2_u32.pow(20), 2_u32.pow(12));
-    /// Default limits for ident length
-    pub const IDENT_LENGTH_LIMITS: LengthLimits = LengthLimits::new(1, 2_u32.pow(7));
-    /// Default maximum number of instructions and expressions per transaction
-    pub const MAX_INSTRUCTION_NUMBER: u64 = 2_u64.pow(12);
-    /// Default maximum number of instructions and expressions per transaction
-    pub const MAX_WASM_SIZE_BYTES: u64 = 4 * 2_u64.pow(20);
-
-    /// Default transaction limits
-    pub const TRANSACTION_LIMITS: TransactionLimits =
-        TransactionLimits::new(MAX_INSTRUCTION_NUMBER, MAX_WASM_SIZE_BYTES);
-}
-
 pub mod torii {
     use std::time::Duration;
 

@@ -81,8 +81,6 @@ pub struct Root {
     dev_telemetry: DevTelemetry,
     #[config(nested)]
     torii: Torii,
-    #[config(nested)]
-    chain_wide: ChainWide,
 }
 
 #[derive(thiserror::Error, Debug, Copy, Clone)]
@@ -125,7 +123,6 @@ impl Root {
         let dev_telemetry = self.dev_telemetry;
         let (torii, live_query_store) = self.torii.parse();
         let telemetry = self.telemetry.map(actual::Telemetry::from);
-        let chain_wide = self.chain_wide.parse();
 
         let peer_id = key_pair.as_ref().map(|key_pair| {
             PeerId::new(
@@ -163,7 +160,6 @@ impl Root {
             snapshot,
             telemetry,
             dev_telemetry,
-            chain_wide,
         })
     }
 }
@@ -465,81 +461,6 @@ pub struct Snapshot {
         env = "SNAPSHOT_STORE_DIR"
     )]
     pub store_dir: WithOrigin<PathBuf>,
-}
-
-// TODO: make serde
-#[derive(Debug, Copy, Clone, ReadConfig)]
-pub struct ChainWide {
-    #[config(default = "defaults::chain_wide::MAX_TXS")]
-    pub max_transactions_in_block: NonZeroU32,
-    #[config(default = "defaults::chain_wide::BLOCK_TIME.into()")]
-    pub block_time: HumanDuration,
-    #[config(default = "defaults::chain_wide::COMMIT_TIME.into()")]
-    pub commit_time: HumanDuration,
-    #[config(default = "defaults::chain_wide::TRANSACTION_LIMITS")]
-    pub transaction_limits: TransactionLimits,
-    #[config(default = "defaults::chain_wide::METADATA_LIMITS")]
-    pub domain_metadata_limits: MetadataLimits,
-    #[config(default = "defaults::chain_wide::METADATA_LIMITS")]
-    pub asset_definition_metadata_limits: MetadataLimits,
-    #[config(default = "defaults::chain_wide::METADATA_LIMITS")]
-    pub account_metadata_limits: MetadataLimits,
-    #[config(default = "defaults::chain_wide::METADATA_LIMITS")]
-    pub asset_metadata_limits: MetadataLimits,
-    #[config(default = "defaults::chain_wide::METADATA_LIMITS")]
-    pub trigger_metadata_limits: MetadataLimits,
-    #[config(default = "defaults::chain_wide::IDENT_LENGTH_LIMITS")]
-    pub ident_length_limits: LengthLimits,
-    #[config(default = "defaults::chain_wide::WASM_FUEL_LIMIT")]
-    pub executor_fuel_limit: u64,
-    #[config(default = "defaults::chain_wide::WASM_MAX_MEMORY_BYTES")]
-    pub executor_max_memory: u32,
-    #[config(default = "defaults::chain_wide::WASM_FUEL_LIMIT")]
-    pub wasm_fuel_limit: u64,
-    #[config(default = "defaults::chain_wide::WASM_MAX_MEMORY_BYTES")]
-    pub wasm_max_memory: u32,
-}
-
-impl ChainWide {
-    fn parse(self) -> actual::ChainWide {
-        let Self {
-            max_transactions_in_block,
-            block_time,
-            commit_time,
-            transaction_limits,
-            asset_metadata_limits,
-            trigger_metadata_limits,
-            asset_definition_metadata_limits,
-            account_metadata_limits,
-            domain_metadata_limits,
-            ident_length_limits,
-            executor_fuel_limit,
-            executor_max_memory,
-            wasm_fuel_limit,
-            wasm_max_memory,
-        } = self;
-
-        actual::ChainWide {
-            max_transactions_in_block,
-            block_time: block_time.get(),
-            commit_time: commit_time.get(),
-            transaction_limits,
-            asset_metadata_limits,
-            trigger_metadata_limits,
-            asset_definition_metadata_limits,
-            account_metadata_limits,
-            domain_metadata_limits,
-            ident_length_limits,
-            executor_runtime: actual::WasmRuntime {
-                fuel_limit: executor_fuel_limit,
-                max_memory_bytes: executor_max_memory,
-            },
-            wasm_runtime: actual::WasmRuntime {
-                fuel_limit: wasm_fuel_limit,
-                max_memory_bytes: wasm_max_memory,
-            },
-        }
-    }
 }
 
 #[derive(Debug, ReadConfig)]

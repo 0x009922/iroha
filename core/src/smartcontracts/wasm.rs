@@ -6,7 +6,6 @@ use std::borrow::Borrow;
 
 use error::*;
 use import::traits::{ExecuteOperations as _, GetExecutorPayloads as _, SetDataModel as _};
-use iroha_config::parameters::actual::WasmRuntime as Config;
 use iroha_data_model::{
     account::AccountId,
     executor::{self, ExecutorDataModel, MigrationResult},
@@ -21,6 +20,7 @@ use iroha_logger::debug;
 use iroha_logger::{error_span as wasm_log_span, prelude::tracing::Span};
 use iroha_wasm_codec::{self as codec, WasmUsize};
 use parity_scale_codec::Decode;
+use serde::{Deserialize, Serialize};
 use wasmtime::{
     Caller, Config as WasmtimeConfig, Engine, Linker, Module, Store, StoreLimits,
     StoreLimitsBuilder, TypedFunc,
@@ -32,6 +32,48 @@ use crate::{
     state::{StateReadOnly, StateTransaction, WorldReadOnly},
     ValidQuery as _,
 };
+
+#[allow(missing_docs)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct Config {
+    pub fuel_limit: u64,
+    pub max_memory_bytes: u32,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        // TODO: consider not using defaults here
+        Self {
+            fuel_limit: 55_000_000,
+            max_memory_bytes: 500 * 2_u32.pow(20),
+        }
+    }
+}
+
+/// Extension for [`Parameters`] to extract WASM [`Config`]s
+pub trait ParametersWasmConfigExt {
+    /// Plain wasm configuration (smartcontract/trigger)
+    fn wasm_config(&self) -> Config;
+
+    /// Executor wasm configuration
+    fn executor_wasm_config(&self) -> Config;
+}
+
+impl ParametersWasmConfigExt for Parameters {
+    fn wasm_config(&self) -> Config {
+        Config {
+            fuel_limit: self.wasm_fuel_limit,
+            max_memory_bytes: self.wasm_max_memory_bytes,
+        }
+    }
+
+    fn executor_wasm_config(&self) -> Config {
+        Config {
+            fuel_limit: self.executor_fuel_limit,
+            max_memory_bytes: self.executor_max_memory_bytes,
+        }
+    }
+}
 
 /// Name of the exported memory
 const WASM_MEMORY: &str = "memory";

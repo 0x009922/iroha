@@ -5,7 +5,7 @@ use iroha_config::parameters::defaults::chain_wide as chain_wide_defaults;
 use iroha_data_model::{
     asset::{AssetDefinitionId, AssetValueType},
     metadata::Limits,
-    parameter::{default::*, ParametersBuilder},
+    parameter::Parameters,
     prelude::AssetId,
 };
 use iroha_genesis::{
@@ -141,6 +141,8 @@ pub fn generate_default(
             )),
     )
     .into();
+
+    // TODO
 
     let parameter_defaults = ParametersBuilder::new()
         .add_parameter(

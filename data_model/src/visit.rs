@@ -40,7 +40,6 @@ pub trait Visit {
         visit_upgrade(&Upgrade),
 
         visit_execute_trigger(&ExecuteTrigger),
-        visit_new_parameter(&NewParameter),
         visit_set_parameter(&SetParameter),
         visit_log(&Log),
 
@@ -230,9 +229,6 @@ pub fn visit_instruction<V: Visit + ?Sized>(
     isi: &InstructionBox,
 ) {
     match isi {
-        InstructionBox::NewParameter(variant_value) => {
-            visitor.visit_new_parameter(authority, variant_value)
-        }
         InstructionBox::SetParameter(variant_value) => {
             visitor.visit_set_parameter(authority, variant_value)
         }
@@ -424,7 +420,6 @@ leaf_visitors! {
     visit_mint_trigger_repetitions(&Mint<u32, Trigger>),
     visit_burn_trigger_repetitions(&Burn<u32, Trigger>),
     visit_upgrade(&Upgrade),
-    visit_new_parameter(&NewParameter),
     visit_set_parameter(&SetParameter),
     visit_execute_trigger(&ExecuteTrigger),
     visit_fail(&Fail),

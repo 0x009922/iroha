@@ -13,7 +13,7 @@ use parity_scale_codec::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
 pub use self::model::*;
-use crate::{permission::PermissionId, transaction::WasmSmartContract, JsonString};
+use crate::{permission::PermissionId, transaction::WasmSmartContract, JsonString, Name};
 
 #[model]
 mod model {
@@ -57,7 +57,7 @@ mod model {
     /// Executor can define:
     ///
     /// - Permission tokens (see [`crate::permission::Permission`])
-    /// - Configuration parameters (see [`crate::parameter::Parameter`])
+    /// - Configuration parameters (see [`crate::config::Parameter`])
     #[derive(
         Default,
         Debug,
@@ -81,6 +81,8 @@ mod model {
         ///
         /// These IDs refer to the types in the schema.
         pub permissions: BTreeSet<PermissionId>,
+        /// Type representing [`crate::parameter::ParameterBox::Custom`]
+        pub custom_parameter: Option<Name>,
         /// Data model JSON schema, typically produced by [`IntoSchema`].
         pub schema: JsonString,
     }
@@ -95,6 +97,11 @@ impl ExecutorDataModel {
     /// Getter
     pub fn permissions(&self) -> &BTreeSet<PermissionId> {
         &self.permissions
+    }
+
+    /// Getter
+    pub fn custom_parameter(&self) -> &Option<Name> {
+        &self.custom_parameter
     }
 
     /// Getter

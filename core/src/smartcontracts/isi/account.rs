@@ -176,7 +176,7 @@ pub mod isi {
         ) -> Result<(), Error> {
             let account_id = self.object_id;
 
-            let account_metadata_limits = state_transaction.config.account_metadata_limits;
+            let account_metadata_limits = state_transaction.parameters().account_metadata_limits;
 
             state_transaction
                 .world

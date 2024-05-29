@@ -124,9 +124,6 @@ declare_permissions! {
     crate::default::permissions::asset::{CanSetKeyValueInUserAsset},
     crate::default::permissions::asset::{CanRemoveKeyValueInUserAsset},
 
-    crate::default::permissions::parameter::{CanGrantPermissionToCreateParameters},
-    crate::default::permissions::parameter::{CanRevokePermissionToCreateParameters},
-    crate::default::permissions::parameter::{CanCreateParameters},
     crate::default::permissions::parameter::{CanGrantPermissionToSetParameters},
     crate::default::permissions::parameter::{CanRevokePermissionToSetParameters},
     crate::default::permissions::parameter::{CanSetParameters},
@@ -373,23 +370,6 @@ pub mod parameter {
     permission! {
         #[derive(Copy, ValidateGrantRevoke)]
         #[validate(permission::OnlyGenesis)]
-        pub struct CanGrantPermissionToCreateParameters;
-    }
-
-    permission! {
-        #[derive(Copy, ValidateGrantRevoke)]
-        #[validate(permission::OnlyGenesis)]
-        pub struct CanRevokePermissionToCreateParameters;
-    }
-
-    permission! {
-        #[derive(Copy)]
-        pub struct CanCreateParameters;
-    }
-
-    permission! {
-        #[derive(Copy, ValidateGrantRevoke)]
-        #[validate(permission::OnlyGenesis)]
         pub struct CanGrantPermissionToSetParameters;
     }
 
@@ -402,30 +382,6 @@ pub mod parameter {
     permission! {
         #[derive(Copy)]
         pub struct CanSetParameters;
-    }
-
-    impl ValidateGrantRevoke for CanCreateParameters {
-        fn validate_grant(&self, authority: &AccountId, _block_height: u64) -> Result {
-            if CanGrantPermissionToCreateParameters.is_owned_by(authority) {
-                return Ok(());
-            }
-
-            Err(ValidationFail::NotPermitted(
-                "Can't grant permission to create new configuration parameters outside genesis without permission from genesis"
-                    .to_owned()
-            ))
-        }
-
-        fn validate_revoke(&self, authority: &AccountId, _block_height: u64) -> Result {
-            if CanGrantPermissionToCreateParameters.is_owned_by(authority) {
-                return Ok(());
-            }
-
-            Err(ValidationFail::NotPermitted(
-                "Can't revoke permission to create new configuration parameters outside genesis without permission from genesis"
-                    .to_owned()
-            ))
-        }
     }
 
     impl ValidateGrantRevoke for CanSetParameters {

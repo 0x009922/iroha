@@ -88,7 +88,7 @@ pub mod isi {
 
             domain_id
                 .name
-                .validate_len(state_transaction.config.ident_length_limits)
+                .validate_len(state_transaction.parameters().ident_length_limits)
                 .map_err(Error::from)?;
 
             if domain_id == *iroha_genesis::GENESIS_DOMAIN_ID {
@@ -300,41 +300,10 @@ pub mod isi {
             state_transaction: &mut StateTransaction<'_, '_>,
         ) -> Result<(), Error> {
             let parameter = self.parameter;
-            let parameter_id = parameter.id.clone();
-
             let world = &mut state_transaction.world;
-            if !world.parameters.remove(&parameter) {
-                return Err(FindError::Parameter(parameter_id).into());
-            }
 
-            world.parameters.insert(parameter);
-
-            world.emit_events(Some(ConfigurationEvent::Changed(parameter_id)));
-
-            Ok(())
-        }
-    }
-
-    impl Execute for NewParameter {
-        #[metrics(+"new_parameter")]
-        fn execute(
-            self,
-            _authority: &AccountId,
-            state_transaction: &mut StateTransaction<'_, '_>,
-        ) -> Result<(), Error> {
-            let parameter = self.parameter;
-            let parameter_id = parameter.id.clone();
-
-            let world = &mut state_transaction.world;
-            if !world.parameters.insert(parameter) {
-                return Err(RepetitionError {
-                    instruction_type: InstructionType::NewParameter,
-                    id: IdBox::ParameterId(parameter_id),
-                }
-                .into());
-            }
-
-            world.emit_events(Some(ConfigurationEvent::Created(parameter_id)));
+            world.parameters.get_mut().patch(parameter.clone());
+            world.emit_events(Some(ConfigurationEvent::Changed(parameter)));
 
             Ok(())
         }
@@ -467,7 +436,6 @@ pub mod isi {
 pub mod query {
     use eyre::Result;
     use iroha_data_model::{
-        parameter::Parameter,
         peer::Peer,
         prelude::*,
         query::error::{FindError, QueryExecutionFail as Error},
@@ -545,11 +513,8 @@ pub mod query {
 
     impl ValidQuery for FindAllParameters {
         #[metrics("find_all_parameters")]
-        fn execute<'state>(
-            &self,
-            state_ro: &'state impl StateReadOnly,
-        ) -> Result<Box<dyn Iterator<Item = Parameter> + 'state>, Error> {
-            Ok(Box::new(state_ro.world().parameters_iter().cloned()))
+        fn execute(&self, state_ro: &impl StateReadOnly) -> Result<Parameters, Error> {
+            Ok(state_ro.world().parameters().clone())
         }
     }
 }

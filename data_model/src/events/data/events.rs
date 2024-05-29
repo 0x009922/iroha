@@ -491,12 +491,26 @@ mod trigger {
 mod config {
     use super::*;
 
-    data_event! {
-        #[has_origin(origin = Parameter)]
+    // same as `data_event!`, but without an origin
+    iroha_data_model_derive::model_single! {
+        #[derive(
+            Debug,
+            Clone,
+            PartialEq,
+            Eq,
+            PartialOrd,
+            Ord,
+            EventSet,
+            parity_scale_codec::Decode,
+            parity_scale_codec::Encode,
+            serde::Deserialize,
+            serde::Serialize,
+            iroha_schema::IntoSchema,
+        )]
+        #[non_exhaustive]
+        #[ffi_type]
         pub enum ConfigurationEvent {
-            Changed(ParameterId),
-            Created(ParameterId),
-            Deleted(ParameterId),
+            Changed(ParameterBox),
         }
     }
 }

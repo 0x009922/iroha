@@ -1,8 +1,7 @@
 //! This module provides the [`State`] — an in-memory representation of the current blockchain state.
-use std::{borrow::Borrow, collections::BTreeSet, marker::PhantomData, sync::Arc, time::Duration};
+use std::{collections::BTreeSet, marker::PhantomData, sync::Arc, time::Duration};
 
 use eyre::Result;
-use iroha_config::parameters::actual::ChainWide as Config;
 use iroha_crypto::HashOf;
 use iroha_data_model::{
     account::AccountId,
@@ -15,7 +14,7 @@ use iroha_data_model::{
     },
     executor::ExecutorDataModel,
     isi::error::{InstructionExecutionError as Error, MathError},
-    parameter::{Parameter, ParameterValueBox},
+    parameter::Parameters,
     permission::Permissions,
     prelude::*,
     query::error::{FindError, QueryExecutionFail},
@@ -52,15 +51,17 @@ use crate::{
             },
             specialized::LoadedActionTrait,
         },
-        wasm, Execute,
+        wasm,
+        wasm::ParametersWasmConfigExt,
+        Execute,
     },
     tx::TransactionExecutor,
-    Parameters, PeersIds,
+    PeersIds,
 };
 
 /// The global entity consisting of `domains`, `triggers` and etc.
 /// For example registration of domain, will have this as an ISI target.
-#[derive(Default, Serialize)]
+#[derive(Serialize)]
 pub struct World {
     /// Iroha config parameters.
     pub(crate) parameters: Cell<Parameters>,
@@ -165,8 +166,6 @@ pub struct WorldView<'world> {
 pub struct State {
     /// The world. Contains `domains`, `triggers`, `roles` and other data representing the current state of the blockchain.
     pub world: World,
-    /// Configuration of World State View.
-    pub config: Cell<Config>,
     /// Blockchain.
     // TODO: Cell is redundant here since block_hashes is very easy to rollback by just popping the last element
     pub block_hashes: Cell<Vec<HashOf<SignedBlock>>>,
@@ -192,8 +191,6 @@ pub struct State {
 pub struct StateBlock<'state> {
     /// The world. Contains `domains`, `triggers`, `roles` and other data representing the current state of the blockchain.
     pub world: WorldBlock<'state>,
-    /// Configuration of World State View.
-    pub config: CellBlock<'state, Config>,
     /// Blockchain.
     pub block_hashes: CellBlock<'state, Vec<HashOf<SignedBlock>>>,
     /// Hashes of transactions mapped onto block height where they stored
@@ -214,8 +211,6 @@ pub struct StateBlock<'state> {
 pub struct StateTransaction<'block, 'state> {
     /// The world. Contains `domains`, `triggers`, `roles` and other data representing the current state of the blockchain.
     pub world: WorldTransaction<'block, 'state>,
-    /// Configuration of World State View.
-    pub config: CellTransaction<'block, 'state, Config>,
     /// Blockchain.
     pub block_hashes: CellTransaction<'block, 'state, Vec<HashOf<SignedBlock>>>,
     /// Hashes of transactions mapped onto block height where they stored
@@ -236,8 +231,6 @@ pub struct StateTransaction<'block, 'state> {
 pub struct StateView<'state> {
     /// The world. Contains `domains`, `triggers`, `roles` and other data representing the current state of the blockchain.
     pub world: WorldView<'state>,
-    /// Configuration of World State View.
-    pub config: CellView<'state, Config>,
     /// Blockchain.
     pub block_hashes: CellView<'state, Vec<HashOf<SignedBlock>>>,
     /// Hashes of transactions mapped onto block height where they stored
@@ -256,12 +249,22 @@ pub struct StateView<'state> {
 
 impl World {
     /// Creates an empty `World`.
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(parameters: Parameters) -> Self {
+        Self {
+            parameters: Cell::new(parameters),
+            trusted_peers_ids: <_>::default(),
+            domains: <_>::default(),
+            roles: <_>::default(),
+            account_permissions: <_>::default(),
+            account_roles: <_>::default(),
+            triggers: <_>::default(),
+            executor: <_>::default(),
+            executor_data_model: <_>::default(),
+        }
     }
 
     /// Creates a [`World`] with these [`Domain`]s and trusted [`PeerId`]s.
-    pub fn with<D>(domains: D, trusted_peers_ids: PeersIds) -> Self
+    pub fn with<D>(parameters: Parameters, domains: D, trusted_peers_ids: PeersIds) -> Self
     where
         D: IntoIterator<Item = Domain>,
     {
@@ -272,7 +275,7 @@ impl World {
         World {
             trusted_peers_ids: Cell::new(trusted_peers_ids),
             domains,
-            ..World::new()
+            ..World::new(parameters)
         }
     }
 
@@ -531,25 +534,27 @@ pub trait WorldReadOnly {
         self.trusted_peers_ids().iter()
     }
 
-    /// Get all `Parameter`s registered in the world.
-    fn parameters_iter(&self) -> impl Iterator<Item = &Parameter> {
-        self.parameters().iter()
-    }
+    // TODO: remove
 
-    /// Query parameter and convert it to a proper type
-    fn query_param<T: TryFrom<ParameterValueBox>, P: core::hash::Hash + Eq + ?Sized>(
-        &self,
-        param: &P,
-    ) -> Option<T>
-    where
-        Parameter: Borrow<P>,
-    {
-        Parameters::get(self.parameters(), param)
-            .as_ref()
-            .map(|param| &param.val)
-            .cloned()
-            .and_then(|param_val| param_val.try_into().ok())
-    }
+    // /// Get all `Parameter`s registered in the world.
+    // fn parameters_iter(&self) -> impl Iterator<Item = &Parameter> {
+    //     self.parameters().iter()
+    // }
+
+    // /// Query parameter and convert it to a proper type
+    // fn query_param<T: TryFrom<ParameterValueBox>, P: core::hash::Hash + Eq + ?Sized>(
+    //     &self,
+    //     param: &P,
+    // ) -> Option<T>
+    // where
+    //     Parameter: Borrow<P>,
+    // {
+    //     Parameters::get(self.parameters(), param)
+    //         .as_ref()
+    //         .map(|param| &param.val)
+    //         .cloned()
+    //         .and_then(|param_val| param_val.try_into().ok())
+    // }
 
     /// Returns reference for trusted peer ids
     #[inline]
@@ -917,21 +922,8 @@ impl State {
     #[must_use]
     #[inline]
     pub fn new(world: World, kura: Arc<Kura>, query_handle: LiveQueryStoreHandle) -> Self {
-        // Added to remain backward compatible with other code primary in tests
-        Self::from_config(Config::default(), world, kura, query_handle)
-    }
-
-    /// Construct [`State`] with specific [`Configuration`].
-    #[inline]
-    pub fn from_config(
-        config: Config,
-        world: World,
-        kura: Arc<Kura>,
-        query_handle: LiveQueryStoreHandle,
-    ) -> Self {
         Self {
             world,
-            config: Cell::new(config),
             transactions: Storage::new(),
             block_hashes: Cell::new(Vec::new()),
             new_tx_amounts: Arc::new(Mutex::new(Vec::new())),
@@ -945,7 +937,6 @@ impl State {
     pub fn block(&self) -> StateBlock<'_> {
         StateBlock {
             world: self.world.block(),
-            config: self.config.block(),
             block_hashes: self.block_hashes.block(),
             transactions: self.transactions.block(),
             engine: &self.engine,
@@ -959,7 +950,6 @@ impl State {
     pub fn block_and_revert(&self) -> StateBlock<'_> {
         StateBlock {
             world: self.world.block_and_revert(),
-            config: self.config.block_and_revert(),
             block_hashes: self.block_hashes.block_and_revert(),
             transactions: self.transactions.block_and_revert(),
             engine: &self.engine,
@@ -973,7 +963,6 @@ impl State {
     pub fn view(&self) -> StateView<'_> {
         StateView {
             world: self.world.view(),
-            config: self.config.view(),
             block_hashes: self.block_hashes.view(),
             transactions: self.transactions.view(),
             engine: &self.engine,
@@ -988,7 +977,7 @@ impl State {
 #[allow(missing_docs)]
 pub trait StateReadOnly {
     fn world(&self) -> &impl WorldReadOnly;
-    fn config(&self) -> &Config;
+    fn parameters(&self) -> &Parameters;
     fn block_hashes(&self) -> &[HashOf<SignedBlock>];
     fn transactions(&self) -> &impl StorageReadOnly<HashOf<SignedTransaction>, u64>;
     fn engine(&self) -> &wasmtime::Engine;
@@ -1098,18 +1087,18 @@ pub trait StateReadOnly {
 
     /// Get transaction executor
     fn transaction_executor(&self) -> TransactionExecutor {
-        TransactionExecutor::new(self.config().transaction_limits)
+        TransactionExecutor::new(self.parameters().transaction_limits)
     }
 }
 
 macro_rules! impl_state_ro {
     ($($ident:ty),*) => {$(
         impl StateReadOnly for $ident {
+            fn parameters(&self) -> &Parameters {
+                &self.world.parameters
+            }
             fn world(&self) -> &impl WorldReadOnly {
                 &self.world
-            }
-            fn config(&self) -> &Config {
-                &self.config
             }
             fn block_hashes(&self) -> &[HashOf<SignedBlock>] {
                 &self.block_hashes
@@ -1142,7 +1131,6 @@ impl<'state> StateBlock<'state> {
     pub fn transaction(&mut self) -> StateTransaction<'_, 'state> {
         StateTransaction {
             world: self.world.trasaction(),
-            config: self.config.transaction(),
             block_hashes: self.block_hashes.transaction(),
             transactions: self.transactions.transaction(),
             engine: self.engine,
@@ -1156,7 +1144,6 @@ impl<'state> StateBlock<'state> {
     pub fn commit(self) {
         self.transactions.commit();
         self.block_hashes.commit();
-        self.config.commit();
         self.world.commit();
     }
 
@@ -1239,7 +1226,6 @@ impl<'state> StateBlock<'state> {
 
         self.block_hashes.push(block_hash);
 
-        self.apply_parameters();
         self.world.events_buffer.push(
             BlockEvent {
                 header: block.as_ref().header().clone(),
@@ -1251,22 +1237,27 @@ impl<'state> StateBlock<'state> {
         core::mem::take(&mut self.world.events_buffer)
     }
 
+    // TODO research why it needs default value
     /// Create time event using previous and current blocks
     fn create_time_event(&self, block: &CommittedBlock) -> TimeEvent {
-        use iroha_config::parameters::defaults::chain_wide::CONSENSUS_ESTIMATION as DEFAULT_CONSENSUS_ESTIMATION;
+        let consensus_estimation = self
+            .world
+            .parameters
+            .consensus_estimation()
+            .expect("unlikely to overflow");
 
         let prev_interval = self.latest_block_ref().map(|latest_block| {
             let header = &latest_block.as_ref().header();
 
             TimeInterval {
                 since: header.timestamp(),
-                length: DEFAULT_CONSENSUS_ESTIMATION,
+                length: consensus_estimation,
             }
         });
 
         let interval = TimeInterval {
             since: block.as_ref().header().timestamp(),
-            length: DEFAULT_CONSENSUS_ESTIMATION,
+            length: consensus_estimation,
         };
 
         TimeEvent {
@@ -1323,32 +1314,6 @@ impl<'state> StateBlock<'state> {
 
         errors.is_empty().then_some(()).ok_or(errors)
     }
-
-    fn apply_parameters(&mut self) {
-        use iroha_data_model::parameter::default::*;
-
-        macro_rules! update_params {
-            ($($param:expr => $config:expr),+ $(,)?) => {
-                $(if let Some(param) = self.world.query_param($param) {
-                    $config = param;
-                })+
-            };
-        }
-
-        update_params! {
-            WSV_DOMAIN_METADATA_LIMITS => self.config.domain_metadata_limits,
-            WSV_ASSET_DEFINITION_METADATA_LIMITS => self.config.asset_definition_metadata_limits,
-            WSV_ACCOUNT_METADATA_LIMITS => self.config.account_metadata_limits,
-            WSV_ASSET_METADATA_LIMITS => self.config.asset_metadata_limits,
-            WSV_TRIGGER_METADATA_LIMITS => self.config.trigger_metadata_limits,
-            WSV_IDENT_LENGTH_LIMITS => self.config.ident_length_limits,
-            EXECUTOR_FUEL_LIMIT => self.config.executor_runtime.fuel_limit,
-            EXECUTOR_MAX_MEMORY => self.config.executor_runtime.max_memory_bytes,
-            WASM_FUEL_LIMIT => self.config.wasm_runtime.fuel_limit,
-            WASM_MAX_MEMORY => self.config.wasm_runtime.max_memory_bytes,
-            TRANSACTION_LIMITS => self.config.transaction_limits,
-        }
-    }
 }
 
 impl StateTransaction<'_, '_> {
@@ -1356,7 +1321,6 @@ impl StateTransaction<'_, '_> {
     pub fn apply(self) {
         self.transactions.apply();
         self.block_hashes.apply();
-        self.config.apply();
         self.world.apply();
     }
 
@@ -1367,7 +1331,7 @@ impl StateTransaction<'_, '_> {
             }
             Executable::Wasm(bytes) => {
                 let mut wasm_runtime = wasm::RuntimeBuilder::<wasm::state::SmartContract>::new()
-                    .with_config(self.config.wasm_runtime)
+                    .with_config(self.parameters().wasm_config())
                     .with_engine(self.engine.clone()) // Cloning engine is cheap
                     .build()?;
                 wasm_runtime
@@ -1409,7 +1373,7 @@ impl StateTransaction<'_, '_> {
                     .expect("contract is not present it's a bug")
                     .clone();
                 let mut wasm_runtime = wasm::RuntimeBuilder::<wasm::state::Trigger>::new()
-                    .with_config(self.config.wasm_runtime)
+                    .with_config(self.parameters().wasm_config())
                     .with_engine(self.engine.clone()) // Cloning engine is cheap
                     .build()?;
                 wasm_runtime
@@ -1695,7 +1659,6 @@ pub(crate) mod deserialize {
                     M: MapAccess<'de>,
                 {
                     let mut world = None;
-                    let mut config = None;
                     let mut block_hashes = None;
                     let mut transactions = None;
 
@@ -1711,9 +1674,6 @@ pub(crate) mod deserialize {
                             "world" => {
                                 world = Some(map.next_value_seed(wasm_seed.cast::<World>())?);
                             }
-                            "config" => {
-                                config = Some(map.next_value()?);
-                            }
                             "block_hashes" => {
                                 block_hashes = Some(map.next_value()?);
                             }
@@ -1726,7 +1686,6 @@ pub(crate) mod deserialize {
 
                     Ok(State {
                         world: world.ok_or_else(|| serde::de::Error::missing_field("world"))?,
-                        config: config.ok_or_else(|| serde::de::Error::missing_field("config"))?,
                         block_hashes: block_hashes
                             .ok_or_else(|| serde::de::Error::missing_field("block_hashes"))?,
                         transactions: transactions
@@ -1741,7 +1700,7 @@ pub(crate) mod deserialize {
 
             deserializer.deserialize_struct(
                 "WorldState",
-                &["world", "config", "block_hashes", "transactions"],
+                &["world", "block_hashes", "transactions"],
                 StateVisitor { loader: self },
             )
         }

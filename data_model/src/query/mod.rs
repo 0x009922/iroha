@@ -235,6 +235,7 @@ mod model {
         BlockHeader(BlockHeader),
         Block(crate::block::SignedBlock),
         ExecutorDataModel(crate::executor::ExecutorDataModel),
+        Parameters(crate::parameter::Parameters),
 
         Vec(
             #[skip_from]
@@ -420,7 +421,7 @@ impl_queries! {
     FindDomainById => crate::domain::Domain,
     FindDomainKeyValueByIdAndKey => MetadataValueBox,
     FindAllPeers => Vec<crate::peer::Peer>,
-    FindAllParameters => Vec<crate::parameter::Parameter>,
+    FindAllParameters => crate::parameter::Parameters,
     FindAllActiveTriggerIds => Vec<crate::trigger::TriggerId>,
     FindTriggerById => crate::trigger::Trigger,
     FindTriggerKeyValueByIdAndKey => MetadataValueBox,
@@ -455,6 +456,7 @@ impl core::fmt::Display for QueryOutputBox {
             QueryOutputBox::Numeric(v) => core::fmt::Display::fmt(&v, f),
             QueryOutputBox::LimitedMetadata(v) => core::fmt::Display::fmt(&v, f),
             QueryOutputBox::ExecutorDataModel(v) => core::fmt::Display::fmt(&v, f),
+            QueryOutputBox::Parameters(v) => core::fmt::Display::fmt(&v, f),
 
             QueryOutputBox::Vec(v) => {
                 // TODO: Remove so we can derive.
@@ -521,7 +523,6 @@ from_and_try_from_value_idbox!(
     AssetDefinitionId(crate::asset::AssetDefinitionId),
     TriggerId(crate::trigger::TriggerId),
     RoleId(crate::role::RoleId),
-    ParameterId(crate::parameter::ParameterId),
     // TODO: Should we wrap String with new type in order to convert like here?
     //from_and_try_from_value_idbox!((DomainName(Name), ErrorValueTryFromDomainName),);
 );
@@ -538,7 +539,6 @@ from_and_try_from_value_identifiable!(
     Asset(crate::asset::Asset),
     Trigger(crate::trigger::Trigger),
     Role(crate::role::Role),
-    Parameter(crate::parameter::Parameter),
 );
 
 impl<V: Into<QueryOutputBox>> From<Vec<V>> for QueryOutputBox {
@@ -1000,11 +1000,17 @@ pub mod peer {
         #[display(fmt = "Find all peers")]
         #[ffi_type]
         pub struct FindAllPeers;
+
+        /// [`FindAllParameters`] Iroha Query finds the state of on-chain configuration.
+        #[derive(Copy, Display)]
+        #[display(fmt = "Find all on-chain configuration parameters")]
+        #[ffi_type]
+        pub struct FindAllParameters;
     }
 
     /// The prelude re-exports most commonly used traits, structs and macros from this crate.
     pub mod prelude {
-        pub use super::FindAllPeers;
+        pub use super::{FindAllParameters, FindAllPeers};
     }
 }
 
@@ -1023,16 +1029,11 @@ pub mod executor {
         #[ffi_type]
         pub struct FindExecutorDataModel;
 
-        /// [`FindAllParameters`] Iroha Query finds all defined executor configuration parameters.
-        #[derive(Copy, Display)]
-        #[display(fmt = "Find all peers parameters")]
-        #[ffi_type]
-        pub struct FindAllParameters;
     }
 
     /// The prelude re-exports most commonly used traits, structs and macros from this crate.
     pub mod prelude {
-        pub use super::{FindAllParameters, FindExecutorDataModel};
+        pub use super::FindExecutorDataModel;
     }
 }
 
@@ -1531,8 +1532,6 @@ pub mod error {
             Role(RoleId),
             /// Failed to find [`Permission`] by id.
             Permission(PermissionId),
-            /// Parameter with id `{0}` not found
-            Parameter(ParameterId),
             /// Failed to find public key: `{0}`
             PublicKey(PublicKey),
         }

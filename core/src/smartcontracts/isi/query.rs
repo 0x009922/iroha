@@ -164,6 +164,7 @@ impl_lazy! {
     iroha_data_model::query::TransactionQueryOutput,
     iroha_data_model::executor::ExecutorDataModel,
     iroha_data_model::trigger::Trigger,
+    iroha_data_model::parameter::Parameters,
 }
 
 /// Query Request statefully validated on the Iroha node side.
@@ -260,6 +261,7 @@ impl ValidQuery for QueryBox {
                 FindAssetDefinitionKeyValueByIdAndKey,
                 FindTriggerKeyValueByIdAndKey,
                 FindExecutorDataModel,
+                FindAllParameters,
             }
 
             FindAllAccounts,
@@ -284,7 +286,6 @@ impl ValidQuery for QueryBox {
             FindAllRoles,
             FindAllRoleIds,
             FindRolesByAccountId,
-            FindAllParameters,
         }
     }
 }

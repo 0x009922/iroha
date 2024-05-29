@@ -62,7 +62,7 @@ pub mod isi {
                     .increase_asset_total_amount(&asset_id.definition_id, Numeric::ONE)?;
             }
 
-            let asset_metadata_limits = state_transaction.config.asset_metadata_limits;
+            let asset_metadata_limits = state_transaction.parameters().asset_metadata_limits;
             let asset = state_transaction
                 .world
                 .asset_or_insert(asset_id.clone(), Metadata::new())?;

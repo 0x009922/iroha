@@ -213,7 +213,7 @@ pub mod isi {
         ) -> Result<(), Error> {
             let trigger_id = self.object_id;
 
-            let trigger_metadata_limits = state_transaction.config.account_metadata_limits;
+            let trigger_metadata_limits = state_transaction.parameters().account_metadata_limits;
             state_transaction
                 .world
                 .triggers
