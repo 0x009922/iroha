@@ -12,13 +12,13 @@ use eyre::Result;
 use iroha_config::parameters::actual::{Common as CommonConfig, Sumeragi as SumeragiConfig};
 use iroha_crypto::{KeyPair, SignatureOf};
 use iroha_data_model::{block::SignedBlock, prelude::*};
+use iroha_futures::supervisor::{spawn_os_thread_as_future, Child, OnShutdown, ShutdownSignal};
 use iroha_genesis::GenesisTransaction;
 use iroha_logger::prelude::*;
 use network_topology::{Role, Topology};
 
 use crate::{
     block::ValidBlock,
-    handler::ThreadHandler,
     kura::BlockCount,
     state::{State, StateBlock},
 };
@@ -36,7 +36,6 @@ use crate::{kura::Kura, prelude::*, queue::Queue, EventsSender, IrohaNetwork, Ne
 pub struct SumeragiHandle {
     /// Counter for amount of dropped messages by sumeragi
     dropped_messages_metric: iroha_telemetry::metrics::DroppedMessagesCounter,
-    _thread_handle: Arc<ThreadHandler>,
     // Should be dropped after `_thread_handle` to prevent sumeargi thread from panicking
     control_message_sender: mpsc::SyncSender<ControlFlowMessage>,
     message_sender: mpsc::SyncSender<BlockMessage>,
@@ -111,14 +110,16 @@ impl SumeragiHandle {
             Topology::recreate_topology(block.as_ref(), view_change_index, peers)
         })
     }
+}
 
+impl SumeragiStartArgs {
     /// Start [`Sumeragi`] actor and return handle to it.
     ///
     /// # Panics
     /// May panic if something is of during initialization which is bug.
     #[allow(clippy::too_many_lines)]
-    pub fn start(
-        SumeragiStartArgs {
+    pub fn start(self, shutdown_signal: ShutdownSignal) -> (SumeragiHandle, Child) {
+        let Self {
             sumeragi_config,
             common_config,
             events_sender,
@@ -133,8 +134,8 @@ impl SumeragiHandle {
                     view_changes,
                     dropped_messages,
                 },
-        }: SumeragiStartArgs,
-    ) -> SumeragiHandle {
+        } = self;
+
         let (control_message_sender, control_message_receiver) = mpsc::sync_channel(100);
         let (message_sender, message_receiver) = mpsc::sync_channel(100);
 
@@ -178,7 +179,7 @@ impl SumeragiHandle {
 
         for block in blocks_iter {
             let mut state_block = state.block();
-            recreate_topology = Self::replay_block(
+            recreate_topology = SumeragiHandle::replay_block(
                 &common_config.chain,
                 &genesis_network.public_key,
                 &block,
@@ -218,32 +219,24 @@ impl SumeragiHandle {
             view_changes_metric: view_changes,
         };
 
-        // Oneshot channel to allow forcefully stopping the thread.
-        let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
+        let child = Child::new(
+            tokio::task::spawn(spawn_os_thread_as_future(
+                std::thread::Builder::new().name("sumeragi".to_owned()),
+                move || {
+                    main_loop::run(genesis_network, sumeragi, &shutdown_signal, state);
+                },
+            )),
+            OnShutdown::Wait(Duration::from_secs(5)),
+        );
 
-        let thread_handle = {
-            let state = Arc::clone(&state);
-            std::thread::Builder::new()
-                .name("sumeragi thread".to_owned())
-                .spawn(move || {
-                    main_loop::run(genesis_network, sumeragi, shutdown_receiver, state);
-                })
-                .expect("Sumeragi thread spawn should not fail.")
-        };
-
-        let shutdown = move || {
-            if let Err(error) = shutdown_sender.send(()) {
-                iroha_logger::error!(?error);
-            }
-        };
-
-        let thread_handle = ThreadHandler::new(Box::new(shutdown), thread_handle);
-        SumeragiHandle {
-            dropped_messages_metric: dropped_messages,
-            control_message_sender,
-            message_sender,
-            _thread_handle: Arc::new(thread_handle),
-        }
+        (
+            SumeragiHandle {
+                dropped_messages_metric: dropped_messages,
+                control_message_sender,
+                message_sender,
+            },
+            child,
+        )
     }
 }
 

@@ -15,6 +15,7 @@ use iroha_core::{
 };
 use iroha_crypto::KeyPair;
 use iroha_data_model::{prelude::*, transaction::TransactionLimits};
+use iroha_futures::supervisor::ShutdownSignal;
 use iroha_primitives::unique_vec::UniqueVec;
 use test_samples::gen_account_in;
 use tokio::{fs, runtime::Runtime};
@@ -43,9 +44,9 @@ async fn measure_block_size_for_n_executors(n_executors: u32) {
         store_dir: WithOrigin::inline(dir.path().to_path_buf()),
     };
     let (kura, _) = iroha_core::kura::Kura::new(&cfg).unwrap();
-    let _thread_handle = iroha_core::kura::Kura::start(kura.clone());
+    let _thread_handle = iroha_core::kura::Kura::start(kura.clone(), ShutdownSignal::new());
 
-    let query_handle = LiveQueryStore::test().start();
+    let query_handle = LiveQueryStore::start_test();
     let state = State::new(World::new(), kura, query_handle);
     let topology = Topology::new(UniqueVec::new());
     let mut block = {

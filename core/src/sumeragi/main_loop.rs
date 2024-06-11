@@ -3,6 +3,7 @@ use std::sync::mpsc;
 
 use iroha_crypto::HashOf;
 use iroha_data_model::{block::*, events::pipeline::PipelineEventBox, peer::PeerId};
+use iroha_futures::supervisor::ShutdownSignal;
 use iroha_p2p::UpdateTopology;
 use tracing::{span, Level};
 
@@ -206,16 +207,16 @@ impl Sumeragi {
         &mut self,
         genesis_public_key: &PublicKey,
         state: &State,
-        shutdown_receiver: &mut tokio::sync::oneshot::Receiver<()>,
+        shutdown_signal: &ShutdownSignal,
     ) -> Result<(), EarlyReturn> {
         info!(addr = %self.peer_id.address, "Listen for genesis");
 
         loop {
             std::thread::sleep(Duration::from_millis(50));
-            early_return(shutdown_receiver).map_err(|e| {
-                debug!(?e, "Early return.");
-                e
-            })?;
+            if shutdown_signal.is_sent() {
+                info!("Shutdown signal received, shutting down Sumeragi...");
+                return Err(EarlyReturn::ShutdownMessageReceived);
+            }
 
             match self.message_receiver.try_recv() {
                 Ok(message) => {
@@ -795,24 +796,12 @@ fn reset_state(
     }
 }
 
-fn should_terminate(shutdown_receiver: &mut tokio::sync::oneshot::Receiver<()>) -> bool {
-    use tokio::sync::oneshot::error::TryRecvError;
-
-    match shutdown_receiver.try_recv() {
-        Err(TryRecvError::Empty) => false,
-        reason => {
-            info!(?reason, "Sumeragi Thread is being shut down.");
-            true
-        }
-    }
-}
-
 #[iroha_logger::log(name = "consensus", skip_all)]
 /// Execute the main loop of [`Sumeragi`]
 pub(crate) fn run(
     genesis_network: GenesisWithPubKey,
     mut sumeragi: Sumeragi,
-    mut shutdown_receiver: tokio::sync::oneshot::Receiver<()>,
+    shutdown_signal: &ShutdownSignal,
     state: Arc<State>,
 ) {
     // Connect peers with initial topology
@@ -828,7 +817,7 @@ pub(crate) fn run(
                 if let Err(err) = sumeragi.init_listen_for_genesis(
                     &genesis_network.public_key,
                     &state,
-                    &mut shutdown_receiver,
+                    shutdown_signal,
                 ) {
                     info!(?err, "Sumeragi Thread is being shut down.");
                     return;
@@ -864,7 +853,7 @@ pub(crate) fn run(
     // Instant when the previous view change or round happened.
     let mut last_view_change_time = Instant::now();
 
-    while !should_terminate(&mut shutdown_receiver) {
+    while !shutdown_signal.is_sent() {
         if should_sleep {
             let span = span!(Level::TRACE, "main_thread_sleep");
             let _enter = span.enter();
@@ -1038,20 +1027,6 @@ enum EarlyReturn {
     ShutdownMessageReceived,
     /// Disconnected
     Disconnected,
-}
-
-fn early_return(
-    shutdown_receiver: &mut tokio::sync::oneshot::Receiver<()>,
-) -> Result<(), EarlyReturn> {
-    use tokio::sync::oneshot::error::TryRecvError;
-
-    match shutdown_receiver.try_recv() {
-        Ok(()) | Err(TryRecvError::Closed) => {
-            info!("Sumeragi Thread is being shut down.");
-            Err(EarlyReturn::ShutdownMessageReceived)
-        }
-        Err(TryRecvError::Empty) => Ok(()),
-    }
 }
 
 /// Strategy to apply block to sumeragi.
@@ -1235,7 +1210,7 @@ mod tests {
         assert!(domain.add_account(account).is_none());
         let world = World::with([domain], topology.ordered_peers.clone());
         let kura = Kura::blank_kura_for_testing();
-        let query_handle = LiveQueryStore::test().start();
+        let query_handle = LiveQueryStore::start_test();
         let state = State::new(world, Arc::clone(&kura), query_handle);
 
         // Create "genesis" block

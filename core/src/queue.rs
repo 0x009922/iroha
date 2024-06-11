@@ -464,7 +464,7 @@ pub mod tests {
     #[test]
     async fn push_tx() {
         let kura = Kura::blank_kura_for_testing();
-        let query_handle = LiveQueryStore::test().start();
+        let query_handle = LiveQueryStore::start_test();
         let state = Arc::new(State::new(world_with_test_domains(), kura, query_handle));
         let state_view = state.view();
 
@@ -482,7 +482,7 @@ pub mod tests {
         let capacity = nonzero!(10_usize);
 
         let kura: Arc<Kura> = Kura::blank_kura_for_testing();
-        let query_handle = LiveQueryStore::test().start();
+        let query_handle = LiveQueryStore::start_test();
         let state = Arc::new(State::new(world_with_test_domains(), kura, query_handle));
         let state_view = state.view();
 
@@ -517,7 +517,7 @@ pub mod tests {
     async fn get_available_txs() {
         let max_txs_in_block = 2;
         let kura = Kura::blank_kura_for_testing();
-        let query_handle = LiveQueryStore::test().start();
+        let query_handle = LiveQueryStore::start_test();
         let state = Arc::new(State::new(world_with_test_domains(), kura, query_handle));
         let state_view = state.view();
 
@@ -544,7 +544,7 @@ pub mod tests {
     #[test]
     async fn push_tx_already_in_blockchain() {
         let kura = Kura::blank_kura_for_testing();
-        let query_handle = LiveQueryStore::test().start();
+        let query_handle = LiveQueryStore::start_test();
         let state = State::new(world_with_test_domains(), kura, query_handle);
         let (_time_handle, time_source) = TimeSource::new_mock(Duration::default());
         let tx = accepted_tx_by_someone(&time_source);
@@ -567,7 +567,7 @@ pub mod tests {
     async fn get_tx_drop_if_in_blockchain() {
         let max_txs_in_block = 2;
         let kura = Kura::blank_kura_for_testing();
-        let query_handle = LiveQueryStore::test().start();
+        let query_handle = LiveQueryStore::start_test();
         let state = State::new(world_with_test_domains(), kura, query_handle);
         let (_time_handle, time_source) = TimeSource::new_mock(Duration::default());
         let tx = accepted_tx_by_someone(&time_source);
@@ -589,7 +589,7 @@ pub mod tests {
     async fn get_available_txs_with_timeout() {
         let max_txs_in_block = 6;
         let kura = Kura::blank_kura_for_testing();
-        let query_handle = LiveQueryStore::test().start();
+        let query_handle = LiveQueryStore::start_test();
         let state = Arc::new(State::new(world_with_test_domains(), kura, query_handle));
         let state_view = state.view();
 
@@ -638,7 +638,7 @@ pub mod tests {
     async fn transactions_available_after_pop() {
         let max_txs_in_block = 2;
         let kura = Kura::blank_kura_for_testing();
-        let query_handle = LiveQueryStore::test().start();
+        let query_handle = LiveQueryStore::start_test();
         let state = Arc::new(State::new(world_with_test_domains(), kura, query_handle));
         let state_view = state.view();
 
@@ -672,7 +672,7 @@ pub mod tests {
         let max_txs_in_block = 2;
         let (alice_id, alice_keypair) = gen_account_in("wonderland");
         let kura = Kura::blank_kura_for_testing();
-        let query_handle = LiveQueryStore::test().start();
+        let query_handle = LiveQueryStore::start_test();
         let state = Arc::new(State::new(world_with_test_domains(), kura, query_handle));
         let state_view = state.view();
 
@@ -731,7 +731,7 @@ pub mod tests {
     async fn concurrent_stress_test() {
         let max_txs_in_block = 10;
         let kura = Kura::blank_kura_for_testing();
-        let query_handle = LiveQueryStore::test().start();
+        let query_handle = LiveQueryStore::start_test();
         let state = Arc::new(State::new(world_with_test_domains(), kura, query_handle));
 
         let (time_handle, time_source) = TimeSource::new_mock(Duration::default());
@@ -805,7 +805,7 @@ pub mod tests {
         let future_threshold = Duration::from_secs(1);
 
         let kura = Kura::blank_kura_for_testing();
-        let query_handle = LiveQueryStore::test().start();
+        let query_handle = LiveQueryStore::start_test();
         let state = Arc::new(State::new(world_with_test_domains(), kura, query_handle));
         let state_view = state.view();
 
@@ -850,7 +850,7 @@ pub mod tests {
             assert!(domain.add_account(bob_account).is_none());
             World::with([domain], PeersIds::new())
         };
-        let query_handle = LiveQueryStore::test().start();
+        let query_handle = LiveQueryStore::start_test();
         let state = State::new(world, kura, query_handle);
 
         let (_time_handle, time_source) = TimeSource::new_mock(Duration::default());

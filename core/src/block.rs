@@ -835,7 +835,7 @@ mod tests {
         assert!(domain.add_account(account).is_none());
         let world = World::with([domain], UniqueVec::new());
         let kura = Kura::blank_kura_for_testing();
-        let query_handle = LiveQueryStore::test().start();
+        let query_handle = LiveQueryStore::start_test();
         let state = State::new(world, kura, query_handle);
         let mut state_block = state.block();
 
@@ -890,7 +890,7 @@ mod tests {
         assert!(domain.add_account(account).is_none());
         let world = World::with([domain], UniqueVec::new());
         let kura = Kura::blank_kura_for_testing();
-        let query_handle = LiveQueryStore::test().start();
+        let query_handle = LiveQueryStore::start_test();
         let state = State::new(world, kura, query_handle);
         let mut state_block = state.block();
 
@@ -966,7 +966,7 @@ mod tests {
         );
         let world = World::with([domain], UniqueVec::new());
         let kura = Kura::blank_kura_for_testing();
-        let query_handle = LiveQueryStore::test().start();
+        let query_handle = LiveQueryStore::start_test();
         let state = State::new(world, kura, query_handle);
         let mut state_block = state.block();
         let transaction_limits = &state_block.transaction_executor().transaction_limits;
@@ -1047,7 +1047,7 @@ mod tests {
         assert!(genesis_domain.add_account(genesis_wrong_account).is_none(),);
         let world = World::with([genesis_domain], UniqueVec::new());
         let kura = Kura::blank_kura_for_testing();
-        let query_handle = LiveQueryStore::test().start();
+        let query_handle = LiveQueryStore::start_test();
         let state = State::new(world, kura, query_handle);
         let mut state_block = state.block();
 

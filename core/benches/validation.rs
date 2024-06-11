@@ -43,7 +43,7 @@ fn build_test_transaction(chain_id: ChainId) -> SignedTransaction {
 
 fn build_test_and_transient_state() -> State {
     let kura = iroha_core::kura::Kura::blank_kura_for_testing();
-    let query_handle = LiveQueryStore::test().start();
+    let query_handle = LiveQueryStore::start_test();
 
     let state = State::new(
         {
@@ -148,7 +148,7 @@ fn sign_blocks(criterion: &mut Criterion) {
     .expect("Failed to accept transaction.");
     let key_pair = KeyPair::random();
     let kura = iroha_core::kura::Kura::blank_kura_for_testing();
-    let query_handle = LiveQueryStore::test().start();
+    let query_handle = LiveQueryStore::start_test();
     let state = State::new(World::new(), kura, query_handle);
     let topology = Topology::new(UniqueVec::new());
 
