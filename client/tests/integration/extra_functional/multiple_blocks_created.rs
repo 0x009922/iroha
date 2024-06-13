@@ -8,7 +8,6 @@ use iroha::{
         prelude::*,
     },
 };
-use iroha_config::parameters::actual::Root as Config;
 use test_network::*;
 use test_samples::gen_account_in;
 
@@ -20,7 +19,7 @@ fn long_multiple_blocks_created() -> Result<()> {
     // Given
     let (_rt, network, client) = Network::start_test_with_runtime(4, Some(10_965));
     wait_for_genesis_committed(&network.clients(), 0);
-    let pipeline_time = Config::pipeline_time();
+    let pipeline_time = TEST_PIPELINE_TIME;
 
     client.submit_all_blocking(
         ParametersBuilder::new()

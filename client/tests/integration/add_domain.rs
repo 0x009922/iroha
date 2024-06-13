@@ -2,7 +2,6 @@ use std::thread;
 
 use eyre::Result;
 use iroha::{client, data_model::prelude::*};
-use iroha_config::parameters::actual::Root as Config;
 use test_network::*;
 
 #[test]
@@ -12,7 +11,6 @@ fn client_add_domain_with_name_length_more_than_limit_should_not_commit_transact
 {
     let (_rt, _peer, test_client) = <PeerBuilder>::new().with_port(10_500).start_with_runtime();
     wait_for_genesis_committed(&vec![test_client.clone()], 0);
-    let pipeline_time = Config::pipeline_time();
 
     // Given
 
@@ -24,7 +22,7 @@ fn client_add_domain_with_name_length_more_than_limit_should_not_commit_transact
     let create_domain = Register::domain(Domain::new(too_long_domain_name.clone()));
     test_client.submit(create_domain)?;
 
-    thread::sleep(pipeline_time * 2);
+    thread::sleep(TEST_PIPELINE_TIME * 2);
 
     assert!(test_client
         .request(client::domain::by_id(normal_domain_id))

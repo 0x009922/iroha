@@ -304,7 +304,6 @@ fn domain_owner_trigger_permissions() -> Result<()> {
     Ok(())
 }
 
-#[ignore = "migrated to client cli python tests"]
 #[test]
 fn domain_owner_transfer() -> Result<()> {
     let (_rt, _peer, test_client) = <PeerBuilder>::new().with_port(11_100).start_with_runtime();

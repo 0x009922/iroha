@@ -1,0 +1,2 @@
+[profile.default]
+#slow-timeout = { period = "30s", terminateli-after = 1 }

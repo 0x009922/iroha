@@ -8,7 +8,6 @@ use iroha::{
         prelude::*,
     },
 };
-use iroha_config::parameters::actual::Root as Config;
 use test_network::*;
 use test_samples::gen_account_in;
 
@@ -75,7 +74,7 @@ fn check_assets(
     iroha
         .poll_request_with_period(
             client::asset::by_account_id(account_id.clone()),
-            Config::block_sync_gossip_time(),
+            TEST_BLOCK_SYNC_PERIOD,
             15,
             |result| {
                 let assets = result.collect::<QueryResult<Vec<_>>>().expect("Valid");
@@ -115,7 +114,7 @@ fn init() -> Result<(
     AssetDefinitionId,
 )> {
     let (rt, network, client) = Network::start_test_with_runtime(4, Some(10_925));
-    let pipeline_time = Config::pipeline_time();
+    let pipeline_time = TEST_PIPELINE_TIME;
     iroha_logger::info!("Started");
     let parameters = ParametersBuilder::new()
         .add_parameter(MAX_TRANSACTIONS_IN_BLOCK, 1u32)?

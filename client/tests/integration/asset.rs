@@ -6,7 +6,6 @@ use iroha::{
     crypto::KeyPair,
     data_model::prelude::*,
 };
-use iroha_config::parameters::actual::Root as Config;
 use iroha_data_model::{
     asset::{AssetId, AssetValue, AssetValueType},
     isi::error::{InstructionEvaluationError, InstructionExecutionError, Mismatch, TypeError},
@@ -97,7 +96,7 @@ fn unregister_asset_should_remove_asset_from_account() -> Result<()> {
 #[test]
 // This test is also covered at the UI level in the iroha_cli tests
 // in test_mint_assets.py
-fn client_add_asset_quantity_to_existing_asset_should_increase_asset_amount() -> Result<()> {
+fn client_add_asset_quantity_to_existing_asset_should_libincrease_asset_amount() -> Result<()> {
     let (_rt, _peer, test_client) = <PeerBuilder>::new().with_port(10_000).start_with_runtime();
     wait_for_genesis_committed(&[test_client.clone()], 0);
 
@@ -215,7 +214,7 @@ fn client_add_asset_with_decimal_should_increase_asset_amount() -> Result<()> {
 fn client_add_asset_with_name_length_more_than_limit_should_not_commit_transaction() -> Result<()> {
     let (_rt, _peer, test_client) = <PeerBuilder>::new().with_port(10_520).start_with_runtime();
     wait_for_genesis_committed(&[test_client.clone()], 0);
-    let pipeline_time = Config::pipeline_time();
+    let pipeline_time = TEST_PIPELINE_TIME;
 
     // Given
     let normal_asset_definition_id = AssetDefinitionId::from_str("xor#wonderland").expect("Valid");

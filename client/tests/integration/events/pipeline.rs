@@ -11,7 +11,6 @@ use iroha::{
         prelude::*,
     },
 };
-use iroha_config::parameters::actual::Root as Config;
 use iroha_data_model::{
     events::pipeline::{
         BlockEvent, BlockEventFilter, BlockStatus, TransactionEventFilter, TransactionStatus,
@@ -56,7 +55,7 @@ fn test_with_instruction_and_status_and_port(
         Network::start_test_with_runtime(PEER_COUNT.try_into().unwrap(), Some(port));
     let clients = network.clients();
     wait_for_genesis_committed(&clients, 0);
-    let pipeline_time = Config::pipeline_time();
+    let pipeline_time = TEST_PIPELINE_TIME;
 
     client.submit_all_blocking(
         ParametersBuilder::new()

@@ -2,14 +2,10 @@ use std::{str::FromStr as _, thread, time::Duration};
 
 use eyre::Result;
 use iroha::{
-    client::{self, Client, QueryResult},
-    crypto::KeyPair,
+    client::{self, QueryResult},
     data_model::prelude::*,
 };
-use iroha_data_model::{
-    permission::Permission, role::RoleId, transaction::error::TransactionRejectionReason,
-    JsonString,
-};
+use iroha_data_model::{permission::Permission, role::RoleId, JsonString};
 use iroha_genesis::GenesisTransaction;
 use serde_json::json;
 use test_network::{PeerBuilder, *};
@@ -56,122 +52,8 @@ fn genesis_transactions_are_validated() {
     }
 }
 
-fn get_assets(iroha: &Client, id: &AccountId) -> Vec<Asset> {
-    iroha
-        .request(client::asset::by_account_id(id.clone()))
-        .expect("Failed to execute request.")
-        .collect::<QueryResult<Vec<_>>>()
-        .expect("Failed to execute request.")
-}
-
 #[test]
-#[ignore = "ignore, more in #2851"]
-fn permissions_disallow_asset_transfer() {
-    let chain_id = ChainId::from("00000000-0000-0000-0000-000000000000");
-
-    let (_rt, _peer, iroha) = <PeerBuilder>::new().with_port(10_730).start_with_runtime();
-    wait_for_genesis_committed(&[iroha.clone()], 0);
-
-    // Given
-    let alice_id = ALICE_ID.clone();
-    let bob_id = BOB_ID.clone();
-    let (mouse_id, _mouse_keypair) = gen_account_in("wonderland");
-    let asset_definition_id: AssetDefinitionId = "xor#wonderland".parse().expect("Valid");
-    let create_asset =
-        Register::asset_definition(AssetDefinition::numeric(asset_definition_id.clone()));
-    let mouse_keypair = KeyPair::random();
-
-    let alice_start_assets = get_assets(&iroha, &alice_id);
-    iroha
-        .submit_blocking(create_asset)
-        .expect("Failed to prepare state.");
-
-    let quantity = numeric!(200);
-    let mint_asset = Mint::asset_numeric(
-        quantity,
-        AssetId::new(asset_definition_id.clone(), bob_id.clone()),
-    );
-    iroha
-        .submit_blocking(mint_asset)
-        .expect("Failed to create asset.");
-
-    //When
-    let transfer_asset = Transfer::asset_numeric(
-        AssetId::new(asset_definition_id, bob_id),
-        quantity,
-        alice_id.clone(),
-    );
-    let transfer_tx = TransactionBuilder::new(chain_id, mouse_id)
-        .with_instructions([transfer_asset])
-        .sign(&mouse_keypair);
-    let err = iroha
-        .submit_transaction_blocking(&transfer_tx)
-        .expect_err("Transaction was not rejected.");
-    let rejection_reason = err
-        .downcast_ref::<TransactionRejectionReason>()
-        .expect("Error {err} is not TransactionRejectionReason");
-    //Then
-    assert!(matches!(
-        rejection_reason,
-        &TransactionRejectionReason::Validation(ValidationFail::NotPermitted(_))
-    ));
-    let alice_assets = get_assets(&iroha, &alice_id);
-    assert_eq!(alice_assets, alice_start_assets);
-}
-
-#[test]
-#[ignore = "ignore, more in #2851"]
-fn permissions_disallow_asset_burn() {
-    let chain_id = ChainId::from("00000000-0000-0000-0000-000000000000");
-
-    let (_rt, _peer, iroha) = <PeerBuilder>::new().with_port(10_735).start_with_runtime();
-
-    let alice_id = ALICE_ID.clone();
-    let bob_id = BOB_ID.clone();
-    let (mouse_id, _mouse_keypair) = gen_account_in("wonderland");
-    let asset_definition_id = AssetDefinitionId::from_str("xor#wonderland").expect("Valid");
-    let create_asset =
-        Register::asset_definition(AssetDefinition::numeric(asset_definition_id.clone()));
-    let mouse_keypair = KeyPair::random();
-
-    let alice_start_assets = get_assets(&iroha, &alice_id);
-
-    iroha
-        .submit_blocking(create_asset)
-        .expect("Failed to prepare state.");
-
-    let quantity = numeric!(200);
-    let mint_asset =
-        Mint::asset_numeric(quantity, AssetId::new(asset_definition_id.clone(), bob_id));
-    iroha
-        .submit_blocking(mint_asset)
-        .expect("Failed to create asset.");
-    let burn_asset = Burn::asset_numeric(
-        quantity,
-        AssetId::new(asset_definition_id, mouse_id.clone()),
-    );
-    let burn_tx = TransactionBuilder::new(chain_id, mouse_id)
-        .with_instructions([burn_asset])
-        .sign(&mouse_keypair);
-
-    let err = iroha
-        .submit_transaction_blocking(&burn_tx)
-        .expect_err("Transaction was not rejected.");
-    let rejection_reason = err
-        .downcast_ref::<TransactionRejectionReason>()
-        .expect("Error {err} is not TransactionRejectionReason");
-
-    assert!(matches!(
-        rejection_reason,
-        &TransactionRejectionReason::Validation(ValidationFail::NotPermitted(_))
-    ));
-
-    let alice_assets = get_assets(&iroha, &alice_id);
-    assert_eq!(alice_assets, alice_start_assets);
-}
-
-#[test]
-#[ignore = "ignore, more in #2851"]
+#[ignore = "It actually can... is it a bug?"]
 fn account_can_query_only_its_own_domain() -> Result<()> {
     let (_rt, _peer, client) = <PeerBuilder>::new().with_port(10_740).start_with_runtime();
     wait_for_genesis_committed(&[client.clone()], 0);

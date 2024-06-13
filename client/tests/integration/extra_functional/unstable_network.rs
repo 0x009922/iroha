@@ -74,7 +74,7 @@ fn unstable_network(
     });
     wait_for_genesis_committed(&network.clients(), n_offline_peers);
 
-    let pipeline_time = Config::pipeline_time();
+    let pipeline_time = TEST_PIPELINE_TIME;
 
     let account_id = ALICE_ID.clone();
     let asset_definition_id: AssetDefinitionId = "camomile#wonderland".parse().expect("Valid");
@@ -112,7 +112,7 @@ fn unstable_network(
         iroha
             .poll_request_with_period(
                 client::asset::by_account_id(account_id.clone()),
-                Config::pipeline_time(),
+                TEST_PIPELINE_TIME,
                 4,
                 |result| {
                     let assets = result.collect::<QueryResult<Vec<_>>>().expect("Valid");

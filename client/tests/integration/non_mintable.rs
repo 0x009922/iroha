@@ -9,6 +9,7 @@ use iroha_data_model::isi::InstructionBox;
 use test_network::*;
 use test_samples::ALICE_ID;
 
+// FIXME: flaky
 #[test]
 fn non_mintable_asset_can_be_minted_once_but_not_twice() -> Result<()> {
     let (_rt, _peer, test_client) = <PeerBuilder>::new().with_port(10_625).start_with_runtime();

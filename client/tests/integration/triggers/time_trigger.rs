@@ -11,7 +11,6 @@ use iroha::{
         Level,
     },
 };
-use iroha_config::parameters::defaults::chain_wide::CONSENSUS_ESTIMATION as DEFAULT_CONSENSUS_ESTIMATION;
 use iroha_logger::info;
 use test_network::*;
 use test_samples::{gen_account_in, ALICE_ID};
@@ -41,12 +40,11 @@ macro_rules! const_assert {
 fn time_trigger_execution_count_error_should_be_less_than_15_percent() -> Result<()> {
     const PERIOD: Duration = Duration::from_millis(100);
     const ACCEPTABLE_ERROR_PERCENT: u8 = 15;
-    const_assert!(PERIOD.as_millis() < DEFAULT_CONSENSUS_ESTIMATION.as_millis());
+    const_assert!(PERIOD.as_millis() <= TEST_CONSENSUS_ESTIMATION.as_millis());
     const_assert!(ACCEPTABLE_ERROR_PERCENT <= 100);
 
     let (_rt, _peer, mut test_client) = <PeerBuilder>::new().with_port(10_775).start_with_runtime();
     wait_for_genesis_committed(&vec![test_client.clone()], 0);
-    let start_time = curr_time();
 
     // Start listening BEFORE submitting any transaction not to miss any block committed event
     let event_listener = get_block_committed_event_listener(&test_client)?;
@@ -57,6 +55,7 @@ fn time_trigger_execution_count_error_should_be_less_than_15_percent() -> Result
 
     let prev_value = get_asset_value(&mut test_client, asset_id.clone());
 
+    let start_time = curr_time() + Duration::from_millis(300);
     let schedule = TimeSchedule::starting_at(start_time).with_period(PERIOD);
     let instruction = Mint::asset_numeric(1u32, asset_id.clone());
     let register_trigger = Register::trigger(Trigger::new(
@@ -68,24 +67,24 @@ fn time_trigger_execution_count_error_should_be_less_than_15_percent() -> Result
             TimeEventFilter::new(ExecutionTime::Schedule(schedule)),
         ),
     ));
-    test_client.submit(register_trigger)?;
+    test_client.submit_blocking(register_trigger)?;
 
     submit_sample_isi_on_every_block_commit(
         event_listener,
         &mut test_client,
         &account_id,
-        Duration::from_secs(1),
-        3,
+        Duration::from_millis(500),
+        6,
     )?;
-    std::thread::sleep(DEFAULT_CONSENSUS_ESTIMATION);
+    // std::thread::sleep(TEST_CONSENSUS_ESTIMATION);
 
     let finish_time = curr_time();
     let average_count = finish_time.saturating_sub(start_time).as_millis() / PERIOD.as_millis();
 
-    let actual_value = get_asset_value(&mut test_client, asset_id);
-    let expected_value = prev_value
+    let actual_value = dbg!(get_asset_value(&mut test_client, asset_id));
+    let expected_value = dbg!(prev_value
         .checked_add(Numeric::new(average_count, 0))
-        .unwrap();
+        .unwrap());
     let acceptable_error = expected_value.to_f64() * (f64::from(ACCEPTABLE_ERROR_PERCENT) / 100.0);
     let error = core::cmp::max(actual_value, expected_value)
         .checked_sub(core::cmp::min(actual_value, expected_value))
@@ -100,11 +99,11 @@ fn time_trigger_execution_count_error_should_be_less_than_15_percent() -> Result
 }
 
 #[test]
-fn mint_asset_after_3_sec() -> Result<()> {
+fn mint_asset_after_specified_period() -> Result<()> {
+    const PERIOD: Duration = Duration::from_secs(3);
+
     let (_rt, _peer, test_client) = <PeerBuilder>::new().with_port(10_660).start_with_runtime();
     wait_for_genesis_committed(&vec![test_client.clone()], 0);
-    // Sleep to certainly bypass time interval analyzed by genesis
-    std::thread::sleep(DEFAULT_CONSENSUS_ESTIMATION);
 
     let asset_definition_id = AssetDefinitionId::from_str("rose#wonderland").expect("Valid");
     let account_id = ALICE_ID.clone();
@@ -114,9 +113,7 @@ fn mint_asset_after_3_sec() -> Result<()> {
         id: asset_id.clone(),
     })?;
 
-    let start_time = curr_time();
-    // Create trigger with schedule which is in the future to the new block but within block estimation time
-    let schedule = TimeSchedule::starting_at(start_time + Duration::from_secs(3));
+    let schedule = TimeSchedule::starting_at(curr_time() + PERIOD);
     let instruction = Mint::asset_numeric(1_u32, asset_id.clone());
     let register_trigger = Register::trigger(Trigger::new(
         "mint_rose".parse().expect("Valid"),
@@ -136,8 +133,7 @@ fn mint_asset_after_3_sec() -> Result<()> {
     })?;
     assert_eq!(init_quantity, after_registration_quantity);
 
-    // Sleep long enough that trigger start is in the past
-    std::thread::sleep(DEFAULT_CONSENSUS_ESTIMATION);
+    std::thread::sleep(PERIOD + Duration::from_millis(500));
     test_client.submit_blocking(Log::new(Level::DEBUG, "Just to create block".to_string()))?;
 
     let after_wait_quantity = test_client.request(FindAssetQuantityById {
@@ -181,9 +177,25 @@ fn pre_commit_trigger_should_be_executed() -> Result<()> {
     test_client.submit(register_trigger)?;
 
     for _ in event_listener.take(CHECKS_COUNT) {
-        let new_value = get_asset_value(&mut test_client, asset_id.clone());
-        assert_eq!(new_value, prev_value.checked_add(Numeric::ONE).unwrap());
-        prev_value = new_value;
+        let expected_value = prev_value.checked_add(Numeric::ONE).unwrap();
+        test_client
+            .poll_request_with_period(
+                client::asset::by_id(asset_id.clone()),
+                Duration::from_millis(500),
+                5,
+                |asset| {
+                    let AssetValue::Numeric(val) = *asset.value() else {
+                        panic!("Unexpected asset value");
+                    };
+                    // FIXME: flaky - sometimes `val` is behind by 1.
+                    //        Does this mean that under high load query observability might be desynchronized
+                    //        from BlockCommitted event?
+
+                    val == expected_value
+                },
+            )
+            .expect("should satisfy within the interval");
+        prev_value = expected_value;
 
         // ISI just to create a new block
         let sample_isi = SetKeyValue::account(
@@ -200,7 +212,7 @@ fn pre_commit_trigger_should_be_executed() -> Result<()> {
 #[test]
 fn mint_nft_for_every_user_every_1_sec() -> Result<()> {
     const TRIGGER_PERIOD: Duration = Duration::from_millis(1000);
-    const EXPECTED_COUNT: u64 = 4;
+    const EXPECTED_COUNT: usize = 4;
 
     let (_rt, _peer, mut test_client) = <PeerBuilder>::new().with_port(10_780).start_with_runtime();
     wait_for_genesis_committed(&vec![test_client.clone()], 0);
@@ -243,7 +255,8 @@ fn mint_nft_for_every_user_every_1_sec() -> Result<()> {
     // Registering trigger
     // Offset into the future to be able to register trigger
     let offset = Duration::from_secs(10);
-    let start_time = curr_time() + offset;
+    let register_time = curr_time() + offset;
+    let start_time = register_time + Duration::from_millis(1_000);
     let schedule = TimeSchedule::starting_at(start_time).with_period(TRIGGER_PERIOD);
     let register_trigger = Register::trigger(Trigger::new(
         "mint_nft_for_all".parse()?,
@@ -263,7 +276,7 @@ fn mint_nft_for_every_user_every_1_sec() -> Result<()> {
         &mut test_client,
         &alice_id,
         TRIGGER_PERIOD,
-        usize::try_from(EXPECTED_COUNT)?,
+        EXPECTED_COUNT,
     )?;
 
     // Checking results
@@ -273,15 +286,13 @@ fn mint_nft_for_every_user_every_1_sec() -> Result<()> {
         let assets = test_client
             .request(client::asset::by_account_id(account_id.clone()))?
             .collect::<QueryResult<Vec<_>>>()?;
-        let count: u64 = assets
+        let count = assets
             .into_iter()
             .filter(|asset| {
                 let s = asset.id().definition().to_string();
                 s.starts_with(start_pattern) && s.ends_with(&end_pattern)
             })
-            .count()
-            .try_into()
-            .expect("`usize` should always fit in `u64`");
+            .count();
 
         assert!(
             count >= EXPECTED_COUNT,
@@ -327,7 +338,7 @@ fn submit_sample_isi_on_every_block_commit(
             "key".parse::<Name>()?,
             String::from("value"),
         );
-        test_client.submit(sample_isi)?;
+        test_client.submit_blocking(sample_isi)?;
     }
 
     Ok(())

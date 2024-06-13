@@ -14,7 +14,7 @@ use iroha::{
 use iroha_config::parameters::actual::{Root as Config, Sumeragi, TrustedPeers};
 pub use iroha_core::state::StateReadOnly;
 use iroha_crypto::{ExposedPrivateKey, KeyPair};
-use iroha_data_model::{query::QueryOutputBox, ChainId};
+use iroha_data_model::{parameter::ParametersBuilder, query::QueryOutputBox, ChainId};
 use iroha_futures::supervisor::ShutdownSignal;
 use iroha_genesis::{GenesisTransaction, RawGenesisTransaction};
 use iroha_logger::{warn, InstrumentFutures};
@@ -22,6 +22,7 @@ use iroha_primitives::{
     addr::{socket_addr, SocketAddr},
     unique_vec::UniqueVec,
 };
+pub use irohad::samples::DEFAULT_BLOCK_GOSSIP_PERIOD as TEST_BLOCK_SYNC_PERIOD;
 use irohad::Iroha;
 use rand::{seq::IteratorRandom, thread_rng};
 use serde_json::json;
@@ -32,6 +33,12 @@ use tokio::{
     time,
 };
 pub use unique_port;
+
+// sane defaults for tests
+pub const TEST_BLOCK_TIME: Duration = Duration::from_millis(50);
+pub const TEST_COMMIT_TIME: Duration = Duration::from_millis(100);
+pub const TEST_PIPELINE_TIME: Duration = Duration::from_millis(150); // block time + commit time
+pub const TEST_CONSENSUS_ESTIMATION: Duration = Duration::from_millis(100); // block time + commit time / 2
 
 /// Network of peers
 pub struct Network {
@@ -120,7 +127,21 @@ impl TestGenesis for GenesisTransaction {
             genesis.append_instruction(Grant::permission(permission, ALICE_ID.clone()).into());
         }
 
-        for isi in extra_isi.into_iter() {
+        // Genesis file contains huge block & commit time, we can use a smaller one for tests
+        let parameters = ParametersBuilder::new()
+            .add_parameter(
+                iroha_data_model::parameter::default::BLOCK_TIME,
+                Numeric::new(TEST_BLOCK_TIME.as_millis().into(), 0),
+            )
+            .unwrap()
+            .add_parameter(
+                iroha_data_model::parameter::default::COMMIT_TIME_LIMIT,
+                Numeric::new(TEST_COMMIT_TIME.as_millis().into(), 0),
+            )
+            .unwrap()
+            .into_set_parameters();
+
+        for isi in extra_isi.into_iter().chain(parameters.into_iter()) {
             genesis.append_instruction(isi);
         }
 
@@ -173,6 +194,7 @@ impl Network {
     ) -> (Self, Client) {
         let mut config = Config::test();
         config.logger.level = Level::INFO;
+        // config.logger.
         let network =
             Network::new_with_offline_peers(Some(config), n_peers, offline_peers, start_port)
                 .await
@@ -212,12 +234,12 @@ impl Network {
             UniqueVec::from_iter(self.peers().map(|peer| &peer.id).cloned());
 
         let peer = PeerBuilder::new()
-            .with_config(config)
+            .with_config(config.clone())
             .with_test_genesis()
             .start()
             .await;
 
-        time::sleep(Config::pipeline_time() + Config::block_sync_gossip_time()).await;
+        time::sleep(TEST_PIPELINE_TIME + TEST_BLOCK_SYNC_PERIOD).await;
 
         let add_peer = Register::peer(DataModelPeer::new(peer.id.clone()));
         client.submit(add_peer).expect("Failed to add new peer.");
@@ -337,7 +359,7 @@ pub fn wait_for_genesis_committed_with_max_retries(
     offline_peers: u32,
     max_retries: u32,
 ) {
-    const POLL_PERIOD: Duration = Duration::from_millis(1000);
+    const POLL_PERIOD: Duration = Duration::from_millis(150);
 
     for _ in 0..max_retries {
         let ready_peers = clients
@@ -638,13 +660,11 @@ impl PeerBuilder {
 
     /// Create and start a peer, create a client and connect it to the peer and return both.
     pub async fn start_with_client(self) -> (Peer, Client) {
-        let config = self.config.clone().unwrap_or_else(Config::test);
-
         let peer = self.start().await;
 
         let client = Client::test(&peer.api_address);
 
-        time::sleep(config.chain_wide.pipeline_time()).await;
+        time::sleep(TEST_PIPELINE_TIME).await;
 
         (peer, client)
     }
@@ -673,10 +693,6 @@ pub trait TestRuntime {
 pub trait TestConfig {
     /// Creates test configuration
     fn test() -> Self;
-    /// Returns default pipeline time.
-    fn pipeline_time() -> Duration;
-    /// Returns default time between block sync requests
-    fn block_sync_gossip_time() -> Duration;
 }
 
 /// Client configuration mocking trait.
@@ -788,14 +804,6 @@ impl TestConfig for Config {
 
         Config::from_toml_source(TomlSource::inline(raw))
             .expect("Test Iroha config failed to build. This is likely to be a bug.")
-    }
-
-    fn pipeline_time() -> Duration {
-        Self::test().chain_wide.pipeline_time()
-    }
-
-    fn block_sync_gossip_time() -> Duration {
-        Self::test().block_sync.gossip_period
     }
 }
 
@@ -910,6 +918,6 @@ impl TestClient for Client {
         <R::Output as QueryOutput>::Target: core::fmt::Debug,
         <R::Output as TryFrom<QueryOutputBox>>::Error: Into<eyre::Error>,
     {
-        self.poll_request_with_period(request, Config::pipeline_time() / 2, 10, f)
+        self.poll_request_with_period(request, TEST_PIPELINE_TIME, 10, f)
     }
 }

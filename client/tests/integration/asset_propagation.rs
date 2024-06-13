@@ -8,19 +8,19 @@ use iroha::{
         prelude::*,
     },
 };
-use iroha_config::parameters::actual::Root as Config;
 use test_network::*;
 use test_samples::gen_account_in;
 
+// FIXME: flaky
 #[test]
 // This test is also covered at the UI level in the iroha_cli tests
 // in test_mint_asset.py
 fn client_add_asset_quantity_to_existing_asset_should_increase_asset_amount_on_another_peer(
 ) -> Result<()> {
     // Given
-    let (_rt, network, client) = Network::start_test_with_runtime(4, Some(10_450));
+    let (_rt, network, client) = Network::start_test_with_runtime(10, Some(10_450));
     wait_for_genesis_committed(&network.clients(), 0);
-    let pipeline_time = Config::pipeline_time();
+    let pipeline_time = TEST_PIPELINE_TIME;
 
     client.submit_all_blocking(
         ParametersBuilder::new()
@@ -39,11 +39,11 @@ fn client_add_asset_quantity_to_existing_asset_should_increase_asset_amount_on_a
     thread::sleep(pipeline_time * 3);
     //When
     let quantity = numeric!(200);
-    client.submit(Mint::asset_numeric(
+    client.submit_blocking(Mint::asset_numeric(
         quantity,
         AssetId::new(asset_definition_id.clone(), account_id.clone()),
     ))?;
-    thread::sleep(pipeline_time);
+    // thread::sleep(pipeline_time);
 
     //Then
     let peer = network.peers.values().last().unwrap();

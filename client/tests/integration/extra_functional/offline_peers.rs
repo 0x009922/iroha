@@ -7,7 +7,6 @@ use iroha::{
         prelude::*,
     },
 };
-use iroha_config::parameters::actual::Root as Config;
 use iroha_primitives::addr::socket_addr;
 use test_network::*;
 use test_samples::ALICE_ID;
@@ -48,7 +47,7 @@ fn register_offline_peer() -> Result<()> {
 
     let (_rt, network, client) = Network::start_test_with_runtime(n_peers, Some(11_160));
     wait_for_genesis_committed(&network.clients(), 0);
-    let pipeline_time = Config::pipeline_time();
+    let pipeline_time = TEST_PIPELINE_TIME;
     let peer_clients = Network::clients(&network);
 
     check_status(&peer_clients, 1);

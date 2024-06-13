@@ -29,7 +29,7 @@ fn connected_peers_with_f_1_0_1() -> Result<()> {
 fn register_new_peer() -> Result<()> {
     let (_rt, network, _) = Network::start_test_with_runtime(4, Some(11_180));
     wait_for_genesis_committed(&network.clients(), 0);
-    let pipeline_time = Config::pipeline_time();
+    let pipeline_time = TEST_PIPELINE_TIME;
 
     let mut peer_clients: Vec<_> = Network::peers(&network)
         .zip(Network::clients(&network))
@@ -75,7 +75,7 @@ fn connected_peers_with_f(faults: u64, start_port: Option<u16>) -> Result<()> {
         start_port,
     );
     wait_for_genesis_committed(&network.clients(), 0);
-    let pipeline_time = Config::pipeline_time();
+    let pipeline_time = TEST_PIPELINE_TIME;
 
     let mut peer_clients: Vec<_> = Network::peers(&network)
         .zip(Network::clients(&network))

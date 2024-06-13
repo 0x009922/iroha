@@ -1,5 +1,5 @@
 //! This module contains the sample configurations used for testing and benchmarking throughout Iroha.
-use std::{collections::HashSet, path::Path, str::FromStr};
+use std::{collections::HashSet, path::Path, str::FromStr, time::Duration};
 
 use iroha_config::{base::toml::TomlSource, parameters::actual::Root as Config};
 use iroha_crypto::{ExposedPrivateKey, KeyPair, PublicKey};
@@ -12,6 +12,8 @@ use iroha_primitives::{
 // FIXME: move to a global test-related place, re-use everywhere else
 const DEFAULT_P2P_ADDR: SocketAddr = socket_addr!(127.0.0.1:1337);
 const DEFAULT_TORII_ADDR: SocketAddr = socket_addr!(127.0.0.1:8080);
+#[allow(missing_docs)]
+pub const DEFAULT_BLOCK_GOSSIP_PERIOD: Duration = Duration::from_millis(10);
 
 /// Get sample trusted peers. The public key must be the same as `configuration.public_key`
 ///
@@ -68,7 +70,10 @@ pub fn get_config_toml(
         .write("private_key", ExposedPrivateKey(private_key))
         .write(["sumeragi", "trusted_peers"], peers)
         .write(["network", "address"], DEFAULT_P2P_ADDR)
-        .write(["network", "block_gossip_period"], 500)
+        .write(
+            ["network", "block_gossip_period"],
+            DEFAULT_BLOCK_GOSSIP_PERIOD.as_millis() as u64,
+        )
         .write(["network", "block_gossip_max_size"], 1)
         .write(["torii", "address"], DEFAULT_TORII_ADDR)
         .write(["chain_wide", "max_transactions_in_block"], 2)

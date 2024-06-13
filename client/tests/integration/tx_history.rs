@@ -5,7 +5,6 @@ use iroha::{
     client::{transaction, QueryResult},
     data_model::{prelude::*, query::Pagination},
 };
-use iroha_config::parameters::actual::Root as Config;
 use nonzero_ext::nonzero;
 use test_network::*;
 use test_samples::ALICE_ID;
@@ -16,7 +15,7 @@ fn client_has_rejected_and_acepted_txs_should_return_tx_history() -> Result<()> 
     let (_rt, _peer, client) = <PeerBuilder>::new().with_port(10_715).start_with_runtime();
     wait_for_genesis_committed(&vec![client.clone()], 0);
 
-    let pipeline_time = Config::pipeline_time();
+    let pipeline_time = TEST_PIPELINE_TIME;
 
     // Given
     let account_id = ALICE_ID.clone();

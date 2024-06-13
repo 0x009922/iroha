@@ -5,7 +5,6 @@ use iroha::{
     client::{self, Client, QueryResult},
     data_model::prelude::*,
 };
-use iroha_config::parameters::actual::Root as Config;
 use rand::{seq::SliceRandom, thread_rng, Rng};
 use test_network::*;
 use test_samples::ALICE_ID;
@@ -22,7 +21,7 @@ fn restarted_peer_should_have_the_same_asset_amount() -> Result<()> {
 
         let (_rt, network, _) = Network::start_test_with_runtime(n_peers, Some(11_205));
         wait_for_genesis_committed(&network.clients(), 0);
-        let pipeline_time = Config::pipeline_time();
+        let pipeline_time = TEST_PIPELINE_TIME;
         let peer_clients = Network::clients(&network);
 
         let create_asset =
