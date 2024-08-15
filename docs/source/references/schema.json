@@ -1815,7 +1815,7 @@
     "Struct": [
       {
         "name": "fetch_size",
-        "type": "Option<NonZero<u32>>"
+        "type": "Option<NonZero<u64>>"
       }
     ]
   },
@@ -2760,11 +2760,11 @@
   "Pagination": {
     "Struct": [
       {
-        "name": "limit",
-        "type": "Option<NonZero<u32>>"
+        "name": "offset",
+        "type": "u64"
       },
       {
-        "name": "offset",
+        "name": "limit",
         "type": "Option<NonZero<u64>>"
       }
     ]
