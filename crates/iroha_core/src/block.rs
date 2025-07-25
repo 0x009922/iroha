@@ -1302,7 +1302,7 @@ mod tests {
 
         // Making two transactions that have the same instruction
         let tx = TransactionBuilder::new(chain_id.clone(), alice_id)
-            .with_instructions([create_asset_definition])
+            .instruction(create_asset_definition)
             .sign(alice_keypair.private_key());
         let tx =
             AcceptedTransaction::accept(tx, &chain_id, max_clock_drift, tx_limits).expect("Valid");
@@ -1351,7 +1351,7 @@ mod tests {
 
         // Making two transactions that have the same instruction
         let tx = TransactionBuilder::new(chain_id.clone(), alice_id.clone())
-            .with_instructions([create_asset_definition])
+            .instruction(create_asset_definition)
             .sign(alice_keypair.private_key());
         let tx =
             AcceptedTransaction::accept(tx, &chain_id, max_clock_drift, tx_limits).expect("Valid");
@@ -1365,13 +1365,13 @@ mod tests {
             Mint::asset_numeric(200u32, AssetId::new(asset_definition_id, alice_id.clone()));
 
         let tx0 = TransactionBuilder::new(chain_id.clone(), alice_id.clone())
-            .with_instructions([fail_mint])
+            .instruction(fail_mint)
             .sign(alice_keypair.private_key());
         let tx0 =
             AcceptedTransaction::accept(tx0, &chain_id, max_clock_drift, tx_limits).expect("Valid");
 
         let tx2 = TransactionBuilder::new(chain_id.clone(), alice_id)
-            .with_instructions([succeed_mint])
+            .instruction(succeed_mint)
             .sign(alice_keypair.private_key());
         let tx2 =
             AcceptedTransaction::accept(tx2, &chain_id, max_clock_drift, tx_limits).expect("Valid");
@@ -1419,12 +1419,14 @@ mod tests {
             Register::asset_definition(AssetDefinition::numeric(asset_definition_id));
         let fail_isi = Unregister::domain("dummy".parse().unwrap());
         let tx_fail = TransactionBuilder::new(chain_id.clone(), alice_id.clone())
-            .with_instructions::<InstructionBox>([create_domain.clone().into(), fail_isi.into()])
+            .instruction(create_domain.clone())
+            .instruction(fail_isi)
             .sign(alice_keypair.private_key());
         let tx_fail = AcceptedTransaction::accept(tx_fail, &chain_id, max_clock_drift, tx_limits)
             .expect("Valid");
         let tx_accept = TransactionBuilder::new(chain_id.clone(), alice_id)
-            .with_instructions::<InstructionBox>([create_domain.into(), create_asset.into()])
+            .instruction(create_domain)
+            .instruction(create_asset)
             .sign(alice_keypair.private_key());
         let tx_accept =
             AcceptedTransaction::accept(tx_accept, &chain_id, max_clock_drift, tx_limits)
@@ -1492,7 +1494,7 @@ mod tests {
         // Sign with `genesis_wrong_key` as peer which has incorrect genesis key pair
         // Bypass `accept_genesis` check to allow signing with wrong key
         let tx = TransactionBuilder::new(chain_id.clone(), genesis_wrong_account_id.clone())
-            .with_instructions([isi])
+            .instruction(isi)
             .sign(genesis_wrong_key.private_key());
         let tx = AcceptedTransaction::new_unchecked(tx);
 

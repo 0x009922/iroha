@@ -1,5 +1,7 @@
 #![allow(missing_docs)]
 
+use std::time::Duration;
+
 use executor_custom_data_model::{complex_isi::NumericQuery, permissions::CanControlDomainLives};
 use eyre::{Context, Result};
 use futures_util::{pin_mut, TryStreamExt as _};
@@ -419,12 +421,12 @@ fn executor_with_fuel() -> Result<()> {
 }
 
 /// Test the same executable as above by invoking it via a trigger.
-#[test] // FIXME #5442: custom executors do not work correctly in the context of triggers.
-fn executor_with_fuel_and_trigger() -> Result<()> {
-    let (network, _rt) = NetworkBuilder::new().start_blocking()?;
+#[tokio::test] // FIXME #5442: custom executors do not work correctly in the context of triggers.
+async fn executor_with_fuel_and_trigger() -> Result<()> {
+    let network = NetworkBuilder::new().start().await?;
     let client = network.client();
 
-    upgrade_executor(&client, "executor_with_fuel")?;
+    upgrade_executor(&client, "executor_with_fuel").await?;
 
     let additional_fuel = |fuel: u64| {
         let mut metadata = Metadata::default();
@@ -432,15 +434,18 @@ fn executor_with_fuel_and_trigger() -> Result<()> {
         metadata
     };
 
-    client.submit_blocking_with_metadata(
-        SetParameter::new(Parameter::Executor(
-            iroha_data_model::parameter::SmartContractParameter::Fuel(
-                // std::num::NonZeroU64::new(10_000_000_u64).unwrap(),
-                std::num::NonZeroU64::new(30_100_000_u64).unwrap(),
-            ),
-        )),
-        additional_fuel(0),
-    )?;
+    client
+        .transaction(|tx| {
+            tx.instruction(SetParameter::new(Parameter::Executor(
+                iroha_data_model::parameter::SmartContractParameter::Fuel(
+                    // std::num::NonZeroU64::new(10_000_000_u64).unwrap(),
+                    std::num::NonZeroU64::new(30_100_000_u64).unwrap(),
+                ),
+            )))
+            .metadata(additional_fuel(0))
+        })
+        .submit_and_verify()
+        .await?;
 
     let bob_rose = AssetId::new("rose#wonderland".parse().unwrap(), BOB_ID.clone());
     let mint_a_rose = Mint::asset_numeric(Numeric::from(1u32), bob_rose.clone());
@@ -455,15 +460,27 @@ fn executor_with_fuel_and_trigger() -> Result<()> {
             ExecuteTriggerEventFilter::new().for_trigger(trigger_id.clone()),
         ),
     ));
-    // client.submit_blocking_with_metadata(register_trigger, additional_fuel(30_000_000))?;
-    client.submit_blocking_with_metadata(register_trigger, additional_fuel(0))?;
+    client
+        .transaction(|tx| {
+            tx.instruction(register_trigger).metadata(additional_fuel(
+                // 30_000_000
+                0,
+            ))
+        })
+        .submit_and_verify()
+        .await?;
 
     let execute_trigger = ExecuteTrigger::new(trigger_id);
-    client.submit_blocking_with_metadata(
-        execute_trigger.clone(),
-        // additional_fuel(30_000_000 + 90_000_000),
-        additional_fuel(0),
-    )?;
+    client
+        .transaction(|tx| {
+            tx.instruction(execute_trigger.clone())
+                .metadata(additional_fuel(
+                    // 30_000_000 + 90_000_000
+                    0,
+                ))
+        })
+        .submit_and_verify()
+        .await?;
 
     // let res = client.submit_blocking_with_metadata(
     //     execute_trigger.clone(),
@@ -479,22 +496,24 @@ fn executor_with_fuel_and_trigger() -> Result<()> {
     Ok(())
 }
 
-#[test]
-fn migration_should_cause_upgrade_event() {
-    let (network, rt) = NetworkBuilder::new()
+#[tokio::test]
+async fn migration_should_cause_upgrade_event() -> Result<()> {
+    let network = NetworkBuilder::new()
         .with_wasm_fuel(WasmFuelConfig::Auto)
-        .start_blocking()
+        .start()
+        .await
         .unwrap();
     let client = network.client();
 
-    let events_client = client.clone();
-    let task = rt.spawn(async move {
-        let stream = events_client
-            .listen_for_events([ExecutorEventFilter::new()])
-            .await
-            .unwrap();
-        pin_mut!(stream);
-        while let Some(event) = stream.try_next().await.unwrap() {
+    let events = client
+        .listen_for_events([ExecutorEventFilter::new()])
+        .await?;
+    pin_mut!(events);
+
+    upgrade_executor(&client, "executor_with_custom_permission").await?;
+
+    tokio::time::timeout(Duration::from_secs(20), async move {
+        while let Some(event) = events.try_next().await.unwrap() {
             if let EventBox::Data(DataEvent::Executor(ExecutorEvent::Upgraded(executor_upgrade))) =
                 event
             {
@@ -502,51 +521,58 @@ fn migration_should_cause_upgrade_event() {
                 break;
             }
         }
-    });
-
-    upgrade_executor(&client, "executor_with_custom_permission").unwrap();
-
-    rt.block_on(async {
-        tokio::time::timeout(core::time::Duration::from_secs(60), task)
-            .await
-            .unwrap()
     })
-    .expect("should receive upgraded event immediately after upgrade");
+    .await?;
+
+    Ok(())
 }
 
-#[test]
-fn define_custom_parameter() -> Result<()> {
+#[tokio::test]
+async fn define_custom_parameter() -> Result<()> {
     use executor_custom_data_model::parameters::DomainLimits;
 
-    let (network, _rt) = NetworkBuilder::new()
+    let network = NetworkBuilder::new()
         .with_wasm_fuel(WasmFuelConfig::Auto)
-        .start_blocking()?;
+        .start()
+        .await?;
     let client = network.client();
 
     let long_domain_name = "0".repeat(2_usize.pow(5)).parse::<DomainId>()?;
     let create_domain = Register::domain(Domain::new(long_domain_name));
-    client.submit_blocking(create_domain)?;
+    client
+        .transaction(|tx| tx.instruction(create_domain))
+        .submit_and_verify()
+        .await?;
 
-    upgrade_executor(&client, "executor_with_custom_parameter")?;
+    upgrade_executor(&client, "executor_with_custom_parameter").await?;
 
     let too_long_domain_name = "1".repeat(2_usize.pow(5)).parse::<DomainId>()?;
     let create_domain = Register::domain(Domain::new(too_long_domain_name));
-    let _err = client.submit_blocking(create_domain.clone()).unwrap_err();
+    let _err = client
+        .transaction(|tx| tx.instruction(create_domain.clone()))
+        .submit_and_verify()
+        .await
+        .unwrap_err();
 
     let parameter = DomainLimits {
         id_len: 2_u32.pow(6),
     }
     .into();
     let set_param_isi = SetParameter::new(parameter);
-    client.submit_all_blocking::<InstructionBox>([set_param_isi.into(), create_domain.into()])?;
+    client
+        .transaction(|tx| tx.instruction(set_param_isi).instruction(create_domain))
+        .submit_and_verify()
+        .await?;
 
     Ok(())
 }
 
-fn upgrade_executor(client: &Client, executor: impl AsRef<str>) -> Result<()> {
+async fn upgrade_executor(client: &Client, executor: impl AsRef<str>) -> Result<()> {
     let upgrade_executor = Upgrade::new(Executor::new(load_sample_wasm(executor)));
     client
-        .submit_blocking(upgrade_executor)
+        .transaction(|tx| tx.instruction(upgrade_executor))
+        .submit_and_verify()
+        .await
         .wrap_err("Have you set WasmFuelConfig::Auto?")?;
     Ok(())
 }

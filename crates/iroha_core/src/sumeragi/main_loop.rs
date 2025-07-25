@@ -1505,14 +1505,14 @@ mod tests {
         };
         // Making two transactions that have the same instruction
         let tx = TransactionBuilder::new(chain_id.clone(), alice_id.clone())
-            .with_instructions([fail_isi])
+            .instruction(fail_isi)
             .sign(alice_keypair.private_key());
         let tx =
             AcceptedTransaction::accept(tx, chain_id, max_clock_drift, tx_limits).expect("Valid");
 
         // NOTE: imitate peer registration in the genesis block
         let peers = TransactionBuilder::new(chain_id.clone(), alice_id.clone())
-            .with_instructions(
+            .instructions(
                 topology
                     .iter()
                     .cloned()
@@ -1551,12 +1551,12 @@ mod tests {
             ));
 
             let tx1 = TransactionBuilder::new(chain_id.clone(), alice_id.clone())
-                .with_instructions([create_asset_definition1])
+                .instruction(create_asset_definition1)
                 .sign(alice_keypair.private_key());
             let tx1 = AcceptedTransaction::accept(tx1, chain_id, max_clock_drift, tx_limits)
                 .expect("Valid");
             let tx2 = TransactionBuilder::new(chain_id.clone(), alice_id)
-                .with_instructions([create_asset_definition2])
+                .instruction(create_asset_definition2)
                 .sign(alice_keypair.private_key());
             let tx2 = AcceptedTransaction::accept(tx2, chain_id, max_clock_drift, tx_limits)
                 .expect("Valid");

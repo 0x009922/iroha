@@ -4,6 +4,7 @@
 use std::{
     collections::HashMap,
     num::{NonZeroU32, NonZeroU64},
+    ops::Deref,
     time::Duration,
 };
 
@@ -137,6 +138,47 @@ pub struct Client {
     pub add_transaction_nonce: bool,
 }
 
+/// Handle holding a constructed transaction and providing methods to submit it
+pub struct TransactionHandle {
+    transaction: SignedTransaction,
+    client: Client,
+    verify: bool,
+    verify_timeout: Duration,
+}
+
+impl Deref for TransactionHandle {
+    type Target = SignedTransaction;
+
+    fn deref(&self) -> &Self::Target {
+        &self.transaction
+    }
+}
+
+impl TransactionHandle {
+    fn new(transaction: SignedTransaction, client: Client) -> Self {
+        todo!()
+    }
+
+    /// Override `transaction_status_timeout` from the client config
+    pub fn with_verify_timeout(self, value: Duration) -> Self {
+        todo!()
+    }
+
+    /// Submit the transaction
+    pub async fn submit(&self) -> Result<()> {
+        todo!()
+    }
+
+    /// Submit the transaction and verify its status from Iroha by listening to events
+    pub async fn submit_and_verify(&self) -> Result<()> {
+        todo!()
+    }
+
+    // pub fn submit_blocking(&self) -> Result<()> {
+    //
+    // }
+}
+
 /// Representation of `Iroha` client.
 impl Client {
     /// Constructor for client from configuration
@@ -185,33 +227,23 @@ impl Client {
         }
     }
 
-    /// Builds transaction out of supplied instructions or wasm.
-    ///
-    /// # Errors
-    /// Fails if signing transaction fails
-    pub fn build_transaction<Exec: Into<Executable>>(
-        &self,
-        instructions: Exec,
-        metadata: Metadata,
-    ) -> SignedTransaction {
-        let tx_builder = TransactionBuilder::new(self.chain.clone(), self.account.clone());
+    /// Build a transaction and return a handle to submit it.
+    pub fn transaction<F>(&self, f: F) -> TransactionHandle
+    where
+        F: FnOnce(TransactionBuilder) -> TransactionBuilder,
+    {
+        let mut builder = TransactionBuilder::new(self.chain.clone(), self.account.clone());
 
-        let mut tx_builder = match instructions.into() {
-            Executable::Instructions(instructions) => tx_builder.with_instructions(instructions),
-            Executable::Wasm(wasm) => tx_builder.with_wasm(wasm),
-        };
-
-        if let Some(transaction_ttl) = self.transaction_ttl {
-            tx_builder.set_ttl(transaction_ttl);
+        if let Some(ttl) = self.transaction_ttl {
+            builder = builder.time_to_live(Some(ttl));
         }
         if self.add_transaction_nonce {
             let nonce = rand::thread_rng().gen::<NonZeroU32>();
-            tx_builder.set_nonce(nonce);
+            builder = builder.nonce(Some(nonce));
         }
-
-        tx_builder
-            .with_metadata(metadata)
-            .sign(self.key_pair.private_key())
+        builder = f(builder);
+        let tx = self.sign_transaction(builder);
+        TransactionHandle::new(tx, self.clone())
     }
 
     /// Signs transaction
@@ -220,107 +252,6 @@ impl Client {
     /// Fails if signature generation fails
     pub fn sign_transaction(&self, transaction: TransactionBuilder) -> SignedTransaction {
         transaction.sign(self.key_pair.private_key())
-    }
-
-    /// Instructions API entry point. Submits one Iroha Special Instruction to `Iroha` peers.
-    /// Returns submitted transaction's hash or error string.
-    ///
-    /// # Errors
-    /// Fails if sending transaction to peer fails or if it response with error
-    pub fn submit<I: Instruction>(&self, isi: I) -> Result<HashOf<SignedTransaction>> {
-        self.submit_all([isi])
-    }
-
-    /// Instructions API entry point. Submits several Iroha Special Instructions to `Iroha` peers.
-    /// Returns submitted transaction's hash or error string.
-    ///
-    /// # Errors
-    /// Fails if sending transaction to peer fails or if it response with error
-    pub fn submit_all<I: Instruction>(
-        &self,
-        instructions: impl IntoIterator<Item = I>,
-    ) -> Result<HashOf<SignedTransaction>> {
-        self.submit_all_with_metadata(instructions, Metadata::default())
-    }
-
-    /// Instructions API entry point. Submits one Iroha Special Instruction to `Iroha` peers.
-    /// Allows to specify [`Metadata`] of [`TransactionBuilder`].
-    /// Returns submitted transaction's hash or error string.
-    ///
-    /// # Errors
-    /// Fails if sending transaction to peer fails or if it response with error
-    pub fn submit_with_metadata<I: Instruction>(
-        &self,
-        instruction: I,
-        metadata: Metadata,
-    ) -> Result<HashOf<SignedTransaction>> {
-        self.submit_all_with_metadata([instruction], metadata)
-    }
-
-    /// Instructions API entry point. Submits several Iroha Special Instructions to `Iroha` peers.
-    /// Allows to specify [`Metadata`] of [`TransactionBuilder`].
-    /// Returns submitted transaction's hash or error string.
-    ///
-    /// # Errors
-    /// Fails if sending transaction to peer fails or if it response with error
-    pub fn submit_all_with_metadata<I: Instruction>(
-        &self,
-        instructions: impl IntoIterator<Item = I>,
-        metadata: Metadata,
-    ) -> Result<HashOf<SignedTransaction>> {
-        self.submit_transaction(&self.build_transaction(instructions, metadata))
-    }
-
-    /// Submit a prebuilt transaction.
-    /// Returns submitted transaction's hash or error string.
-    ///
-    /// # Errors
-    /// Fails if sending transaction to peer fails or if it response with error
-    pub fn submit_transaction(
-        &self,
-        transaction: &SignedTransaction,
-    ) -> Result<HashOf<SignedTransaction>> {
-        iroha_logger::trace!(tx=?transaction, "Submitting");
-        let (req, hash) = self.prepare_transaction_request::<DefaultRequestBuilder>(transaction);
-        let response = req
-            .build()?
-            .send()
-            .wrap_err_with(|| format!("Failed to send transaction with hash {hash:?}"))?;
-        TransactionResponseHandler::handle(&response)?;
-        Ok(hash)
-    }
-
-    /// Submit the prebuilt transaction and wait until it is either rejected or committed.
-    /// If rejected, return the rejection reason.
-    ///
-    /// # Errors
-    /// Fails if sending a transaction to a peer fails or there is an error in the response
-    pub fn submit_transaction_blocking(
-        &self,
-        transaction: &SignedTransaction,
-    ) -> Result<HashOf<SignedTransaction>> {
-        let hash = transaction.hash();
-        tracing::debug!(%hash, ?transaction, "Submitting transaction");
-
-        std::thread::scope(|scope| {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .unwrap();
-
-            let (submit_tx, submit_rx) = tokio::sync::oneshot::channel();
-            let _handle = scope.spawn(|| {
-                let result = self.submit_transaction(transaction);
-                let _ = submit_tx.send(result);
-            });
-            let ((), _hash) = rt.block_on(async move {
-                let confirm = self.wait_tx_confirmation(hash);
-                let submit = async { submit_rx.await.expect("channel must not be closed") };
-                tokio::try_join!(confirm, submit)
-            })?;
-
-            Ok(hash)
-        })
     }
 
     async fn wait_tx_confirmation(&self, hash: HashOf<SignedTransaction>) -> Result<()> {
@@ -370,83 +301,6 @@ impl Client {
         tokio::time::timeout(self.transaction_status_timeout, confirmation_loop).await??;
 
         Ok(())
-    }
-
-    /// Lower-level Instructions API entry point.
-    ///
-    /// Returns a tuple with a provided request builder, a hash of the transaction, and a response handler.
-    /// Despite the fact that response handling can be implemented just by asserting that status code is 200,
-    /// it is better to use a response handler anyway. It allows to abstract from implementation details.
-    ///
-    /// For general usage example see [`Client::prepare_query_request`].
-    fn prepare_transaction_request<B: RequestBuilder>(
-        &self,
-        transaction: &SignedTransaction,
-    ) -> (B, HashOf<SignedTransaction>) {
-        let transaction_bytes: Vec<u8> = transaction.encode_versioned();
-
-        (
-            B::new(
-                HttpMethod::POST,
-                join_torii_url(&self.torii_url, torii_uri::TRANSACTION),
-            )
-            .headers(self.headers.clone())
-            .body(transaction_bytes),
-            transaction.hash(),
-        )
-    }
-
-    /// Submits and waits until the transaction is either rejected or committed.
-    /// Returns rejection reason if transaction was rejected.
-    ///
-    /// # Errors
-    /// Fails if sending transaction to peer fails or if it response with error
-    pub fn submit_blocking<I: Instruction>(
-        &self,
-        instruction: I,
-    ) -> Result<HashOf<SignedTransaction>> {
-        self.submit_all_blocking(vec![instruction.into()])
-    }
-
-    /// Submits and waits until the transaction is either rejected or committed.
-    /// Returns rejection reason if transaction was rejected.
-    ///
-    /// # Errors
-    /// Fails if sending transaction to peer fails or if it response with error
-    pub fn submit_all_blocking<I: Instruction>(
-        &self,
-        instructions: impl IntoIterator<Item = I>,
-    ) -> Result<HashOf<SignedTransaction>> {
-        self.submit_all_blocking_with_metadata(instructions, Metadata::default())
-    }
-
-    /// Submits and waits until the transaction is either rejected or committed.
-    /// Allows to specify [`Metadata`] of [`TransactionBuilder`].
-    /// Returns rejection reason if transaction was rejected.
-    ///
-    /// # Errors
-    /// Fails if sending transaction to peer fails or if it response with error
-    pub fn submit_blocking_with_metadata<I: Instruction>(
-        &self,
-        instruction: I,
-        metadata: Metadata,
-    ) -> Result<HashOf<SignedTransaction>> {
-        self.submit_all_blocking_with_metadata(vec![instruction.into()], metadata)
-    }
-
-    /// Submits and waits until the transaction is either rejected or committed.
-    /// Allows to specify [`Metadata`] of [`TransactionBuilder`].
-    /// Returns rejection reason if transaction was rejected.
-    ///
-    /// # Errors
-    /// Fails if sending transaction to peer fails or if it response with error
-    pub fn submit_all_blocking_with_metadata<I: Instruction>(
-        &self,
-        instructions: impl IntoIterator<Item = I>,
-        metadata: Metadata,
-    ) -> Result<HashOf<SignedTransaction>> {
-        let transaction = self.build_transaction(instructions, metadata);
-        self.submit_transaction_blocking(&transaction)
     }
 
     /// Connect (through `WebSocket`) to listen for `Iroha` `pipeline` and `data` events.
@@ -740,25 +594,18 @@ mod tests {
             ..config_factory()
         });
 
-        let build_transaction =
-            || client.build_transaction(Vec::<InstructionBox>::new(), Metadata::default());
+        let build_transaction = || client.transaction(|builder| builder);
         let tx1 = build_transaction();
         let tx2 = build_transaction();
         assert_ne!(tx1.hash(), tx2.hash());
 
         let tx2 = {
-            let mut tx = TransactionBuilder::new(client.chain.clone(), client.account.clone())
-                .with_executable(tx1.instructions().clone())
-                .with_metadata(tx1.metadata().clone());
-
-            tx.set_creation_time(tx1.creation_time());
-            if let Some(nonce) = tx1.nonce() {
-                tx.set_nonce(nonce);
-            }
-            if let Some(transaction_ttl) = client.transaction_ttl {
-                tx.set_ttl(transaction_ttl);
-            }
-
+            let tx = TransactionBuilder::new(client.chain.clone(), client.account.clone())
+                .instructions(tx1.instructions().clone())
+                .metadata(tx1.metadata().clone())
+                .creation_time(tx1.creation_time())
+                .nonce(tx1.nonce())
+                .time_to_live(tx1.time_to_live());
             client.sign_transaction(tx)
         };
         assert_eq!(tx1.hash(), tx2.hash());

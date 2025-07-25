@@ -445,10 +445,9 @@ pub mod tests {
         // Random name needed so all transactions will be different
         let domain_name = format!("dummy{}", rand::random::<u64>());
         let fail_isi = Unregister::domain(domain_name.parse().unwrap());
-        let instructions = [fail_isi];
         let tx =
             TransactionBuilder::new_with_time_source(chain_id.clone(), account_id, time_source)
-                .with_instructions(instructions)
+                .instruction(fail_isi)
                 .sign(key_pair.private_key());
         let tx_limits = TransactionParameters {
             max_instructions: nonzero!(4096_u64),
@@ -595,11 +594,10 @@ pub mod tests {
         let (time_handle, time_source) = TimeSource::new_mock(Duration::default());
 
         let ok_instruction = Log::new(iroha_logger::Level::INFO, "pass".into());
-        let mut tx =
-            TransactionBuilder::new_with_time_source(chain_id.clone(), alice_id, &time_source)
-                .with_instructions([ok_instruction]);
-        tx.set_ttl(Duration::from_millis(100));
-        let tx = tx.sign(alice_keypair.private_key());
+        let tx = TransactionBuilder::new_with_time_source(chain_id.clone(), alice_id, &time_source)
+            .instruction(ok_instruction)
+            .time_to_live(Some(Duration::from_millis(100)))
+            .sign(alice_keypair.private_key());
         let tx = AcceptedTransaction::accept(tx, &chain_id, max_clock_drift, tx_limits)
             .expect("Failed to accept Transaction.");
 
@@ -721,11 +719,10 @@ pub mod tests {
         queue.events_sender = event_sender;
         let fail_isi = Unregister::domain("dummy".parse().unwrap());
         let instructions = [fail_isi];
-        let mut tx =
-            TransactionBuilder::new_with_time_source(chain_id.clone(), alice_id, &time_source)
-                .with_instructions(instructions);
-        tx.set_ttl(Duration::from_millis(TTL_MS));
-        let tx = tx.sign(alice_keypair.private_key());
+        let tx = TransactionBuilder::new_with_time_source(chain_id.clone(), alice_id, &time_source)
+            .instructions(instructions)
+            .time_to_live(Some(Duration::from_millis(TTL_MS)))
+            .sign(alice_keypair.private_key());
         let tx_hash = tx.hash();
         let tx = AcceptedTransaction::accept(tx, &chain_id, max_clock_drift, tx_limits)
             .expect("Failed to accept Transaction.");

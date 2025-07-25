@@ -424,7 +424,7 @@ mod tests {
                 self.account_id.clone(),
                 &self.time_source,
             )
-            .with_instructions([Log::new(Level::DEBUG, "meow".to_string())])
+            .instruction(Log::new(Level::DEBUG, "meow".to_string()))
             .sign(self.account_keypair.private_key());
             let tx =
                 AcceptedTransaction::accept(tx, &chain_id(), max_clock_drift, tx_limits).unwrap();
