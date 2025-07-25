@@ -1264,21 +1264,14 @@ mod tests {
             kura.store_block(block_genesis.clone());
         }
 
-        let (max_clock_drift, tx_limits) = {
-            let params = state.view().world.parameters;
-            (params.sumeragi().max_clock_drift(), params.transaction)
-        };
         let tx1 = TransactionBuilder::new(chain_id.clone(), account_id.clone())
-            .with_instructions([Log::new(Level::INFO, "msg1".to_string())])
+            .instruction(Log::new(Level::INFO, "msg1".to_string()))
             .sign(account_keypair.private_key());
-
         let tx2 = TransactionBuilder::new(chain_id.clone(), account_id)
-            .with_instructions([Log::new(Level::INFO, "msg2".to_string())])
+            .instruction(Log::new(Level::INFO, "msg2".to_string()))
             .sign(account_keypair.private_key());
-        let tx1 =
-            crate::AcceptedTransaction::accept(tx1, &chain_id, max_clock_drift, tx_limits).unwrap();
-        let tx2 =
-            crate::AcceptedTransaction::accept(tx2, &chain_id, max_clock_drift, tx_limits).unwrap();
+        let tx1 = crate::AcceptedTransaction::new_unchecked(tx1);
+        let tx2 = crate::AcceptedTransaction::new_unchecked(tx2);
 
         {
             let unverified_block = BlockBuilder::new(vec![tx1.clone()])
@@ -1358,20 +1351,12 @@ mod tests {
 
         fn next(&mut self) -> Arc<SignedBlock> {
             let tx = {
-                let builder = TransactionBuilder::new(
+                let tx = TransactionBuilder::new(
                     ChainId::from("test"),
                     SAMPLE_GENESIS_ACCOUNT_ID.to_owned(),
-                );
-
-                let tx = if self.blocks.is_empty() {
-                    builder.with_instructions([Upgrade::new(Executor::new(
-                        WasmSmartContract::from_compiled(vec![]),
-                    ))])
-                } else {
-                    builder.with_instructions([Log::new(Level::INFO, "test".to_owned())])
-                }
+                )
+                .instruction(Log::new(Level::INFO, "test".to_owned()))
                 .sign(SAMPLE_GENESIS_ACCOUNT_KEYPAIR.private_key());
-
                 AcceptedTransaction::new_unchecked(tx)
             };
 

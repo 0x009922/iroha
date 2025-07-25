@@ -907,7 +907,7 @@ pub mod tests {
                 let instructions =
                     transfers_batched::<N_INSTRUCTIONS>(src, quantity_per_instruction, dest);
                 TransactionBuilder::new(CHAIN_ID.clone(), GENESIS_ACCOUNT.id.clone())
-                    .with_instructions(instructions)
+                    .instructions(instructions)
                     .sign(&GENESIS_ACCOUNT.key)
             };
             self.transactions.push(transaction);

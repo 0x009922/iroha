@@ -20,6 +20,7 @@ use iroha::{
     data_model::prelude::*,
 };
 use thiserror::Error;
+use tokio::runtime::Runtime;
 
 /// Iroha Client CLI provides a simple way to interact with the Iroha Web API.
 #[derive(clap::Parser, Debug)]
@@ -115,16 +116,18 @@ trait RunContext {
 
     fn output_instructions(&self) -> bool;
 
-    fn print_data(&mut self, data: &dyn Serialize) -> Result<()>;
+    fn print_data(&self, data: &dyn Serialize) -> Result<()>;
 
-    fn println(&mut self, data: impl Display) -> Result<()>;
+    fn println(&self, data: impl Display) -> Result<()>;
 
     fn client_from_config(&self) -> Client {
         Client::new(self.config().clone())
     }
 
+    fn runtime(&self) -> &Runtime;
+
     /// Submit instructions or dump them to stdout depending on the flag
-    fn finish(&mut self, instructions: impl Into<Executable>) -> Result<()> {
+    fn finish(&self, instructions: impl Into<Executable>) -> Result<()> {
         let mut instructions = match instructions.into() {
             Executable::Wasm(wasm) => {
                 if self.input_instructions() || self.output_instructions() {
@@ -153,40 +156,36 @@ trait RunContext {
     /// # Errors
     ///
     /// Fails if submitting over network fails
-    fn submit(&mut self, instructions: impl Into<Executable>) -> Result<()> {
+    fn submit(&self, instructions: impl Into<Executable>) -> Result<()> {
         let client = self.client_from_config();
-        let transaction = client.build_transaction(
-            instructions,
-            self.transaction_metadata().cloned().unwrap_or_default(),
-        );
+        let transaction = client.transaction(|tx| {
+            tx.instructions(instructions)
+                .metadata(self.transaction_metadata().cloned().unwrap_or_default())
+        });
 
-        #[cfg(not(debug_assertions))]
-        let err_msg = "Failed to submit transaction";
-        #[cfg(debug_assertions)]
-        let err_msg = format!("Failed to submit transaction {transaction:?}");
-
-        let hash = client
-            .submit_transaction_blocking(&transaction)
-            .wrap_err(err_msg)?;
+        let transaction = self.runtime().block_on(async move {
+            transaction.submit_and_verify().await?;
+            Ok::<_, eyre::Report>(transaction)
+        })?;
 
         self.println("Transaction Submitted. Details:")?;
-        self.print_data(&transaction)?;
+        self.print_data(&*transaction)?;
         self.println("Hash:")?;
-        self.print_data(&hash)?;
+        self.print_data(&transaction.hash())?;
 
         Ok(())
     }
 }
 
-struct PrintJsonContext<W> {
-    write: W,
+struct PrintJsonContext {
     config: Config,
     transaction_metadata: Option<Metadata>,
     input_instructions: bool,
     output_instructions: bool,
+    runtime: Runtime,
 }
 
-impl<W: std::io::Write> RunContext for PrintJsonContext<W> {
+impl RunContext for PrintJsonContext {
     fn config(&self) -> &Config {
         &self.config
     }
@@ -203,19 +202,23 @@ impl<W: std::io::Write> RunContext for PrintJsonContext<W> {
         self.output_instructions
     }
 
+    fn runtime(&self) -> &Runtime {
+        &self.runtime
+    }
+
     /// Serialize and print data
     ///
     /// # Errors
     ///
     /// - if serialization fails
     /// - if printing fails
-    fn print_data(&mut self, data: &dyn Serialize) -> Result<()> {
-        writeln!(&mut self.write, "{}", serde_json::to_string_pretty(data)?)?;
-        Ok(())
+    fn print_data(&self, data: &dyn Serialize) -> Result<()> {
+        self.println(serde_json::to_string_pretty(data)?)
     }
 
-    fn println(&mut self, data: impl Display) -> Result<()> {
-        writeln!(&mut self.write, "{data}")?;
+    fn println(&self, data: impl Display) -> Result<()> {
+        let mut stdout = std::io::stdout().lock();
+        writeln!(&mut stdout, "{data}")?;
         Ok(())
     }
 }
@@ -226,7 +229,7 @@ trait Run {
     ///
     /// # Errors
     /// if inner command errors
-    fn run<C: RunContext>(self, context: &mut C) -> Result<()>;
+    fn run<C: RunContext>(self, context: &C) -> Result<()>;
 }
 
 macro_rules! match_all {
@@ -238,7 +241,7 @@ macro_rules! match_all {
 }
 
 impl Run for Command {
-    fn run<C: RunContext>(self, context: &mut C) -> Result<()> {
+    fn run<C: RunContext>(self, context: &C) -> Result<()> {
         use Command::*;
         match_all!((self, context), { Domain, Account, Asset, Nft, Peer, Events, Blocks, Multisig, Query, Transaction, Role, Parameter, Trigger, Executor, MarkdownHelp, Version })
     }
@@ -260,7 +263,7 @@ enum MainError {
 struct MarkdownHelp;
 
 impl Run for MarkdownHelp {
-    fn run<C: RunContext>(self, _context: &mut C) -> Result<()> {
+    fn run<C: RunContext>(self, _context: &C) -> Result<()> {
         Ok(())
     }
 }
@@ -269,7 +272,7 @@ impl Run for MarkdownHelp {
 struct Version;
 
 impl Run for Version {
-    fn run<C: RunContext>(self, context: &mut C) -> Result<()> {
+    fn run<C: RunContext>(self, context: &C) -> Result<()> {
         println!("Client git SHA: {}", env!("VERGEN_GIT_SHA"));
         println!("Client version: {}", env!("CARGO_PKG_VERSION"));
         let client = context.client_from_config();
@@ -307,12 +310,17 @@ fn main() -> error_stack::Result<(), MainError> {
         );
     }
 
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+
     let mut context = PrintJsonContext {
-        write: io::stdout(),
         config,
         transaction_metadata: None,
         input_instructions: args.input,
         output_instructions: args.output,
+        runtime,
     };
     if let Some(path) = args.metadata {
         let str = fs::read_to_string(&path)
@@ -414,7 +422,7 @@ mod events {
     }
 
     impl Run for Args {
-        fn run<C: RunContext>(self, context: &mut C) -> Result<()> {
+        fn run<C: RunContext>(self, context: &C) -> Result<()> {
             use self::Command::*;
             let timeout: Option<Duration> = self.timeout.map(Into::into);
 
@@ -430,7 +438,7 @@ mod events {
 
     fn listen(
         filter: impl Into<EventFilterBox>,
-        context: &mut impl RunContext,
+        context: &impl RunContext,
         timeout: Option<Duration>,
     ) -> Result<()> {
         let filter = filter.into();
@@ -477,7 +485,7 @@ mod blocks {
     }
 
     impl Run for Args {
-        fn run<C: RunContext>(self, context: &mut C) -> Result<()> {
+        fn run<C: RunContext>(self, context: &C) -> Result<()> {
             let Args { height, timeout } = self;
             let timeout: Option<Duration> = timeout.map(Into::into);
             listen(height, context, timeout)
@@ -486,7 +494,7 @@ mod blocks {
 
     fn listen(
         height: NonZeroU64,
-        context: &mut impl RunContext,
+        context: &impl RunContext,
         timeout: Option<Duration>,
     ) -> Result<()> {
         let client = context.client_from_config();
@@ -535,7 +543,7 @@ macro_rules! impl_list {
         }
 
         impl Run for List {
-            fn run<C: RunContext>(self, context: &mut C) -> Result<()> {
+            fn run<C: RunContext>(self, context: &C) -> Result<()> {
                 let client = context.client_from_config();
                 let query = client.query($query);
                 match self {
@@ -581,7 +589,7 @@ mod domain {
     }
 
     impl Run for Command {
-        fn run<C: RunContext>(self, context: &mut C) -> Result<()> {
+        fn run<C: RunContext>(self, context: &C) -> Result<()> {
             use self::Command::*;
             match self {
                 List(cmd) => cmd.run(context),
@@ -670,7 +678,7 @@ mod account {
     }
 
     impl Run for Command {
-        fn run<C: RunContext>(self, context: &mut C) -> Result<()> {
+        fn run<C: RunContext>(self, context: &C) -> Result<()> {
             use self::Command::*;
             match self {
                 Role(cmd) => cmd.run(context),
@@ -714,7 +722,7 @@ mod account {
     }
 
     impl Run for RoleCommand {
-        fn run<C: RunContext>(self, context: &mut C) -> Result<()> {
+        fn run<C: RunContext>(self, context: &C) -> Result<()> {
             use self::RoleCommand::*;
             match self {
                 List(args) => {
@@ -753,7 +761,7 @@ mod account {
     }
 
     impl Run for PermissionCommand {
-        fn run<C: RunContext>(self, context: &mut C) -> Result<()> {
+        fn run<C: RunContext>(self, context: &C) -> Result<()> {
             use self::PermissionCommand::*;
             match self {
                 List(args) => {
@@ -825,7 +833,7 @@ mod asset {
     }
 
     impl Run for Command {
-        fn run<C: RunContext>(self, context: &mut C) -> Result<()> {
+        fn run<C: RunContext>(self, context: &C) -> Result<()> {
             use self::Command::*;
             match self {
                 Definition(cmd) => cmd.run(context),
@@ -891,7 +899,7 @@ mod asset {
         }
 
         impl Run for Command {
-            fn run<C: RunContext>(self, context: &mut C) -> Result<()> {
+            fn run<C: RunContext>(self, context: &C) -> Result<()> {
                 use self::Command::*;
                 match self {
                     List(cmd) => cmd.run(context),
@@ -1031,7 +1039,7 @@ mod nft {
     }
 
     impl Run for Command {
-        fn run<C: RunContext>(self, context: &mut C) -> Result<()> {
+        fn run<C: RunContext>(self, context: &C) -> Result<()> {
             use self::Command::*;
             match self {
                 Get(args) => {
@@ -1137,7 +1145,7 @@ mod peer {
     }
 
     impl Run for Command {
-        fn run<C: RunContext>(self, context: &mut C) -> Result<()> {
+        fn run<C: RunContext>(self, context: &C) -> Result<()> {
             use self::Command::*;
             match self {
                 List(cmd) => cmd.run(context),
@@ -1164,7 +1172,7 @@ mod peer {
     }
 
     impl Run for List {
-        fn run<C: RunContext>(self, context: &mut C) -> Result<()> {
+        fn run<C: RunContext>(self, context: &C) -> Result<()> {
             let client = context.client_from_config();
             let entries = client.query(FindPeers).execute_all()?;
             context.print_data(&entries)
@@ -1207,7 +1215,7 @@ mod multisig {
     }
 
     impl Run for Command {
-        fn run<C: RunContext>(self, context: &mut C) -> Result<()> {
+        fn run<C: RunContext>(self, context: &C) -> Result<()> {
             use self::Command::*;
             match_all!((self, context), { List, Register, Propose, Approve })
         }
@@ -1237,7 +1245,7 @@ mod multisig {
     }
 
     impl Run for Register {
-        fn run<C: RunContext>(self, context: &mut C) -> Result<()> {
+        fn run<C: RunContext>(self, context: &C) -> Result<()> {
             if self.signatories.len() != self.weights.len() {
                 return Err(eyre!("signatories and weights must be equal in length"));
             }
@@ -1273,7 +1281,7 @@ mod multisig {
     }
 
     impl Run for Propose {
-        fn run<C: RunContext>(self, context: &mut C) -> Result<()> {
+        fn run<C: RunContext>(self, context: &C) -> Result<()> {
             let instructions: Vec<InstructionBox> = parse_json5_stdin(context)?;
             let transaction_ttl_ms = self.transaction_ttl.map(|duration| {
                 duration
@@ -1307,7 +1315,7 @@ mod multisig {
     }
 
     impl Run for Approve {
-        fn run<C: RunContext>(self, context: &mut C) -> Result<()> {
+        fn run<C: RunContext>(self, context: &C) -> Result<()> {
             let approve_multisig_transaction =
                 MultisigApprove::new(self.account, self.instructions_hash);
 
@@ -1324,7 +1332,7 @@ mod multisig {
     }
 
     impl Run for List {
-        fn run<C: RunContext>(self, context: &mut C) -> Result<()> {
+        fn run<C: RunContext>(self, context: &C) -> Result<()> {
             let client = context.client_from_config();
             let me = client.account.clone();
             let Ok(my_multisig_roles) = client
@@ -1523,7 +1531,7 @@ mod query {
     }
 
     impl Run for Command {
-        fn run<C: RunContext>(self, context: &mut C) -> Result<()> {
+        fn run<C: RunContext>(self, context: &C) -> Result<()> {
             use self::Command::*;
             match_all!((self, context), { Stdin })
         }
@@ -1533,7 +1541,7 @@ mod query {
     pub struct Stdin;
 
     impl Run for Stdin {
-        fn run<C: RunContext>(self, context: &mut C) -> Result<()> {
+        fn run<C: RunContext>(self, context: &C) -> Result<()> {
             let client = Client::new(context.config().clone());
             let query: AnyQueryBox = parse_json5_stdin(context)?;
 
@@ -1607,7 +1615,7 @@ mod transaction {
     }
 
     impl Run for Command {
-        fn run<C: RunContext>(self, context: &mut C) -> Result<()> {
+        fn run<C: RunContext>(self, context: &C) -> Result<()> {
             use self::Command::*;
             match_all!((self, context), { Get, Ping, Wasm, Stdin })
         }
@@ -1621,7 +1629,7 @@ mod transaction {
     }
 
     impl Run for Get {
-        fn run<C: RunContext>(self, context: &mut C) -> Result<()> {
+        fn run<C: RunContext>(self, context: &C) -> Result<()> {
             let client = context.client_from_config();
             let transaction = client
                 .query(FindTransactions)
@@ -1642,7 +1650,7 @@ mod transaction {
     }
 
     impl Run for Ping {
-        fn run<C: RunContext>(self, context: &mut C) -> Result<()> {
+        fn run<C: RunContext>(self, context: &C) -> Result<()> {
             let instruction = Log::new(self.log_level, self.msg);
             context.finish([instruction])
         }
@@ -1656,7 +1664,7 @@ mod transaction {
     }
 
     impl Run for Wasm {
-        fn run<C: RunContext>(self, context: &mut C) -> Result<()> {
+        fn run<C: RunContext>(self, context: &C) -> Result<()> {
             let blob = if let Some(path) = self.path {
                 fs::read(path).wrap_err("Failed to read a Wasm from the file into the buffer")?
             } else {
@@ -1673,7 +1681,7 @@ mod transaction {
     pub struct Stdin;
 
     impl Run for Stdin {
-        fn run<C: RunContext>(self, context: &mut C) -> Result<()> {
+        fn run<C: RunContext>(self, context: &C) -> Result<()> {
             let instructions: Vec<InstructionBox> = parse_json5_stdin(context)?;
             context
                 .finish(instructions)
@@ -1700,7 +1708,7 @@ mod role {
     }
 
     impl Run for Command {
-        fn run<C: RunContext>(self, context: &mut C) -> Result<()> {
+        fn run<C: RunContext>(self, context: &C) -> Result<()> {
             use self::Command::*;
             match self {
                 Permission(cmd) => cmd.run(context),
@@ -1735,7 +1743,7 @@ mod role {
     }
 
     impl Run for PermissionCommand {
-        fn run<C: RunContext>(self, context: &mut C) -> Result<()> {
+        fn run<C: RunContext>(self, context: &C) -> Result<()> {
             use self::PermissionCommand::*;
             match self {
                 List(args) => {
@@ -1783,7 +1791,7 @@ mod role {
     }
 
     impl Run for List {
-        fn run<C: RunContext>(self, context: &mut C) -> Result<()> {
+        fn run<C: RunContext>(self, context: &C) -> Result<()> {
             let client = context.client_from_config();
             let ids = client.query(FindRoleIds).execute_all()?;
             context.print_data(&ids)
@@ -1804,7 +1812,7 @@ mod parameter {
     }
 
     impl Run for Command {
-        fn run<C: RunContext>(self, context: &mut C) -> Result<()> {
+        fn run<C: RunContext>(self, context: &C) -> Result<()> {
             use self::Command::*;
             match_all!((self, context), { List, Set })
         }
@@ -1817,7 +1825,7 @@ mod parameter {
     }
 
     impl Run for List {
-        fn run<C: RunContext>(self, context: &mut C) -> Result<()> {
+        fn run<C: RunContext>(self, context: &C) -> Result<()> {
             let client = context.client_from_config();
             let params = client.query_single(FindParameters)?;
             context.print_data(&params)
@@ -1828,7 +1836,7 @@ mod parameter {
     pub struct Set;
 
     impl Run for Set {
-        fn run<C: RunContext>(self, context: &mut C) -> Result<()> {
+        fn run<C: RunContext>(self, context: &C) -> Result<()> {
             let entry: Parameter = parse_json5_stdin(context)?;
             let instruction = SetParameter::new(entry);
             context.finish([instruction])
@@ -1861,7 +1869,7 @@ mod trigger {
     }
 
     impl Run for Command {
-        fn run<C: RunContext>(self, context: &mut C) -> Result<()> {
+        fn run<C: RunContext>(self, context: &C) -> Result<()> {
             use self::Command::*;
             match self {
                 List(cmd) => cmd.run(context),
@@ -1911,7 +1919,7 @@ mod trigger {
     }
 
     impl Run for List {
-        fn run<C: RunContext>(self, context: &mut C) -> Result<()> {
+        fn run<C: RunContext>(self, context: &C) -> Result<()> {
             let client = context.client_from_config();
             let ids = client.query(FindActiveTriggerIds).execute_all()?;
             context.print_data(&ids)
@@ -1939,7 +1947,7 @@ mod trigger {
     pub struct Register;
 
     impl Run for Register {
-        fn run<C: RunContext>(self, _context: &mut C) -> Result<()> {
+        fn run<C: RunContext>(self, _context: &C) -> Result<()> {
             todo!()
         }
     }
@@ -1957,7 +1965,7 @@ mod executor {
     }
 
     impl Run for Command {
-        fn run<C: RunContext>(self, context: &mut C) -> Result<()> {
+        fn run<C: RunContext>(self, context: &C) -> Result<()> {
             use self::Command::*;
             match self {
                 DataModel => {
@@ -2012,7 +2020,7 @@ mod metadata {
                 }
 
                 impl Run for Command {
-                    fn run<C: RunContext>(self, context: &mut C) -> Result<()> {
+                    fn run<C: RunContext>(self, context: &C) -> Result<()> {
                         use self::Command::*;
                         match self {
                             Get(args) => {
@@ -2073,7 +2081,7 @@ mod metadata {
         }
 
         impl Run for Command {
-            fn run<C: RunContext>(self, context: &mut C) -> Result<()> {
+            fn run<C: RunContext>(self, context: &C) -> Result<()> {
                 use self::Command::*;
                 match self {
                     Get(args) => {

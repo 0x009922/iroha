@@ -392,14 +392,15 @@ mod tests {
             let valid_tx = {
                 let ok_instruction = Log::new(iroha_logger::Level::INFO, "pass".into());
                 let tx = TransactionBuilder::new(chain_id.clone(), ALICE_ID.clone())
-                    .with_instructions([ok_instruction])
+                    .instruction(ok_instruction)
                     .sign(ALICE_KEYPAIR.private_key());
                 AcceptedTransaction::accept(tx, &chain_id, max_clock_drift, tx_limits)?
             };
             let invalid_tx = {
                 let fail_isi = Unregister::domain("dummy".parse().unwrap());
                 let tx = TransactionBuilder::new(chain_id.clone(), ALICE_ID.clone())
-                    .with_instructions([fail_isi.clone(), fail_isi])
+                    .instruction(fail_isi.clone())
+                    .instruction(fail_isi)
                     .sign(ALICE_KEYPAIR.private_key());
                 AcceptedTransaction::accept(tx, &chain_id, max_clock_drift, tx_limits)?
             };
@@ -555,7 +556,7 @@ mod tests {
 
         let ok_instruction = Log::new(iroha_logger::Level::INFO, "pass".into());
         let tx = TransactionBuilder::new(chain_id.clone(), ALICE_ID.clone())
-            .with_instructions([ok_instruction])
+            .instruction(ok_instruction)
             .sign(ALICE_KEYPAIR.private_key());
 
         let va_tx = AcceptedTransaction::accept(tx, &chain_id, max_clock_drift, tx_limits)?;
@@ -582,7 +583,7 @@ mod tests {
         let state_view = state.view();
 
         let unapplied_tx = TransactionBuilder::new(chain_id, ALICE_ID.clone())
-            .with_instructions([Unregister::account(gen_account_in("domain").0)])
+            .instruction(Unregister::account(gen_account_in("domain").0))
             .sign(ALICE_KEYPAIR.private_key());
         let wrong_hash = TransactionEntrypoint::from(unapplied_tx).hash();
 

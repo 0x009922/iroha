@@ -42,13 +42,14 @@ async fn json_and_scale_statuses_equality() -> Result<()> {
 
     check(&client, 1).await?;
 
-    {
-        let client = client.clone();
-        spawn_blocking(move || {
-            client.submit_blocking(Register::domain(Domain::new("looking_glass".parse()?)))
+    client
+        .transaction(|tx| {
+            tx.instruction(Register::domain(Domain::new(
+                "looking_glass".parse().unwrap(),
+            )))
         })
-    }
-    .await??;
+        .submit_and_verify()
+        .await?;
     network.ensure_blocks(2).await?;
 
     check(&client, 2).await?;

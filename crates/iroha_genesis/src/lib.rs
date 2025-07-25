@@ -131,7 +131,7 @@ impl RawGenesisTransaction {
         let mut transactions = vec![];
         for instructions in self.parse()? {
             let transaction = TransactionBuilder::new(chain.clone(), genesis_account.clone())
-                .with_instructions(instructions)
+                .instructions(instructions)
                 .sign(genesis_key_pair.private_key());
             transactions.push(transaction);
         }

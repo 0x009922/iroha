@@ -4,7 +4,7 @@ use alloc::{boxed::Box, format, string::String, vec::Vec};
 use core::{
     fmt::{Display, Formatter, Result as FmtResult},
     iter::IntoIterator,
-    num::{NonZeroU32, NonZeroU64},
+    num::{NonZero, NonZeroU32, NonZeroU64},
     time::Duration,
 };
 
@@ -12,6 +12,7 @@ use derive_more::{DebugCustom, Deref, Display, From, TryInto};
 use iroha_crypto::{HashOf, Signature, SignatureOf};
 use iroha_data_model_derive::model;
 use iroha_macro::FromVariant;
+use iroha_primitives::json::Json;
 #[cfg(feature = "std")]
 use iroha_primitives::time::TimeSource;
 use iroha_schema::IntoSchema;
@@ -24,6 +25,7 @@ use crate::{
     account::AccountId,
     isi::{Instruction, InstructionBox},
     metadata::Metadata,
+    name::Name,
     trigger::TriggerId,
     ChainId,
 };
@@ -517,62 +519,56 @@ impl TransactionBuilder {
 }
 
 impl TransactionBuilder {
-    /// Set instructions for this transaction
-    pub fn with_instructions<T: Instruction>(
-        mut self,
-        instructions: impl IntoIterator<Item = T>,
-    ) -> Self {
-        self.payload.instructions = instructions
-            .into_iter()
-            .map(Into::into)
-            .collect::<Vec<InstructionBox>>()
-            .into();
+    /// Set executable
+    pub fn instructions(mut self, instructions: impl Into<Executable>) -> Self {
+        todo!()
+    }
+
+    /// Set [`Executable::Wasm`] with the given smartcontract.
+    ///
+    /// If [`Executable::Instructions`] is currently set, it is overwritten.
+    pub fn wasm(mut self, wasm: WasmSmartContract) -> Self {
+        todo!()
+    }
+
+    /// Append an instruction to the existing [`Executable::Instructions`]
+    ///
+    /// If [`Executable::Wasm`] is currently set, it is overwritten.
+    pub fn instruction<T: Instruction>(mut self, instruction: T) -> Self {
+        todo!()
+    }
+
+    /// Set transaction metadata
+    pub fn metadata(mut self, metadata: Metadata) -> Self {
+        todo!()
+    }
+
+    /// _Append_ a key-value entry to transaction metadata
+    pub fn metadata_entry(mut self, name: impl Into<Name>, value: impl Into<Json>) -> Self {
+        todo!()
+    }
+
+    /// Set nonce
+    pub fn nonce(mut self, nonce: Option<NonZeroU32>) -> Self {
+        self.payload.nonce = nonce;
         self
     }
 
-    /// Add wasm to this transaction
-    pub fn with_wasm(mut self, wasm: WasmSmartContract) -> Self {
-        self.payload.instructions = wasm.into();
-        self
-    }
-
-    /// Set executable for this transaction
-    pub fn with_executable(mut self, executable: Executable) -> Self {
-        self.payload.instructions = executable;
-        self
-    }
-
-    /// Adds metadata to this transaction
-    pub fn with_metadata(mut self, metadata: Metadata) -> Self {
-        self.payload.metadata = metadata;
-        self
-    }
-
-    /// Set nonce for this transaction
-    pub fn set_nonce(&mut self, nonce: NonZeroU32) -> &mut Self {
-        self.payload.nonce = Some(nonce);
-        self
-    }
-
-    /// Set time-to-live for this transaction
-    pub fn set_ttl(&mut self, time_to_live: Duration) -> &mut Self {
-        let ttl: u64 = time_to_live
-            .as_millis()
-            .try_into()
-            .expect("INTERNAL BUG: Unix timestamp exceedes u64::MAX");
-
-        self.payload.time_to_live_ms = if ttl == 0 {
-            // TODO: This is not correct, 0 is not the same as None
-            None
-        } else {
-            Some(NonZeroU64::new(ttl).expect("Can't be 0"))
-        };
+    /// Set TTL (time to live)
+    pub fn time_to_live(mut self, value: Option<Duration>) -> Self {
+        self.payload.time_to_live_ms = value
+            .map::<u64, _>(|x| {
+                x.as_millis()
+                    .try_into()
+                    .expect("unix timestamp exceedes u64::MAX")
+            })
+            .and_then(NonZero::new);
 
         self
     }
 
-    /// Set creation time of transaction
-    pub fn set_creation_time(&mut self, value: Duration) -> &mut Self {
+    /// Set creation time
+    pub fn creation_time(mut self, value: Duration) -> Self {
         self.payload.creation_time_ms = u64::try_from(value.as_millis())
             .expect("INTERNAL BUG: Unix timestamp exceedes u64::MAX");
         self
